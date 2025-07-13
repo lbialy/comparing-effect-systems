@@ -19,10 +19,11 @@ case class Scrape(uri: Uri, depth: Int)
 sealed trait Done
 case object Done extends Done
 
-case class Trace(id: UUID, uri: Uri):
-  override def toString(): String = s"[$id: $uri]"
+case class Trace(id: UUID, uri: Option[Uri]):
+  override def toString(): String = s"[$id: ${uri.getOrElse("no-uri")}]"
 object Trace:
-  def apply(uri: Uri): Trace = Trace(UUID.randomUUID(), uri)
+  def apply(uri: Uri): Trace = Trace(UUID.randomUUID(), Some(uri))
+  def apply(uri: Option[Uri]): Trace = Trace(UUID.randomUUID(), uri)
 
 trait Fetch[F[_]]:
   def fetch(uri: Uri)(using trace: Trace): F[String]

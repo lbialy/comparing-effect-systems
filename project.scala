@@ -13,11 +13,14 @@
 
 //> using dep dev.zio::zio:2.1.19
 
-//> using dep com.softwaremill.ox::core:0.7.0
+//> using dep com.softwaremill.ox::core:0.7.3
 
 //> using dep io.getkyo::kyo-core:0.19.0
 //> using dep io.getkyo::kyo-combinators:0.19.0
 //> using dep ch.qos.logback:logback-classic:1.5.18
+
+//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core:2.36.7
+//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros:2.36.7
 
 //> using dep ch.epfl.lamp::gears:0.2.0
 
