@@ -1,0 +1,6 @@
+.bsp
+.metals
+.scala-build
+.vscode
+tapir.softwaremill.com*
+crawldown
