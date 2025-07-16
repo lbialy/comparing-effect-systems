@@ -20,13 +20,12 @@ final class CatsScraper(
       queue <- Queue.bounded[IO, Scrape | Done | Throwable](queueCapacity)
       semaphore <- Semaphore[IO](parallelism.toLong)
       visited <- Ref.of[IO, Set[Uri]](Set.empty)
-      spawned <- Ref.of[IO, Long](0)
-      finished <- Ref.of[IO, Long](0)
+      inFlight <- Ref.of[IO, Int](0)
       _ <- queue.offer(Scrape(root, 0))
       _ <- Supervisor[IO].use { supervisor =>
         def coordinator: IO[Unit] =
-          (queue.size, spawned.get, finished.get)
-            .mapN(_ == 0 && _ == _)
+          (queue.size, inFlight.get)
+            .mapN(_ == 0 && _ == 0)
             .ifM(
               IO.unit,
               queue.take.flatMap {
@@ -41,13 +40,13 @@ final class CatsScraper(
                       else
                         for
                           _ <- visited.update(_ + uri)
-                          _ <- spawned.update(_ + 1)
+                          _ <- inFlight.update(_ + 1)
                           _ <- IO.println(s"$trace: CatsScraper: crawling $uri")
                           _ <- supervisor.supervise(crawl(uri, depth, queue, semaphore))
                         yield ()
                     _ <- coordinator
                   yield ()
-                case Done => finished.update(_ + 1) *> coordinator
+                case Done => inFlight.update(_ - 1) *> coordinator
               }
             )
 

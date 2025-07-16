@@ -3,10 +3,6 @@ package ma.chinespirit.crawldown
 import zio.{Task => ZTask, Trace => ZTrace, *}
 import sttp.model.Uri
 
-// notes:
-// ZIO.scoped + forkScoped is extremely pleasant to use
-// I kinda miss the ifM extension method
-
 class ZIOScraper(
     fetch: Fetch[ZTask],
     store: Store[ZTask],
@@ -22,15 +18,13 @@ class ZIOScraper(
       _ <- queue.offer(Scrape(root, 0))
       sem <- Semaphore.make(parallelism.toLong)
       visitedRef <- Ref.make(Set.empty[Uri])
-      spawnedRef <- Ref.make(0L)
-      finishedRef <- Ref.make(0L)
+      inFlightRef <- Ref.make(0)
       _ <- ZIO.scoped {
         def coordinator: ZIO[Scope, Throwable, Unit] = {
           ZIO.ifZIO {
             queue.isEmpty
-              .zip(spawnedRef.get)
-              .zip(finishedRef.get)
-              .map((empty, spawned, done) => empty && spawned == done)
+              .zip(inFlightRef.get)
+              .map((empty, inFlight) => empty && inFlight == 0)
           }(
             onTrue = ZIO.unit,
             onFalse = queue.take.flatMap {
@@ -43,13 +37,15 @@ class ZIOScraper(
                     if depth >= maxDepth then ZIO.logInfo(s"[$trace]: depth limit — skipping $uri")
                     else if seen then ZIO.logInfo(s"[$trace]: already visited — skipping $uri")
                     else
-                      visitedRef.update(_ + uri) *>
-                        spawnedRef.update(_ + 1) *>
-                        ZIO.logInfo(s"[$trace]: ZIOScraper: crawling $uri") *>
-                        crawl(uri, depth, queue, sem).forkScoped
+                      for
+                        _ <- visitedRef.update(_ + uri)
+                        _ <- inFlightRef.update(_ + 1)
+                        _ <- ZIO.logInfo(s"[$trace]: ZIOScraper: crawling $uri")
+                        _ <- crawl(uri, depth, queue, sem).forkScoped
+                      yield ()
                   _ <- coordinator
                 yield ()
-              case Done => finishedRef.update(_ + 1) *> coordinator
+              case Done => inFlightRef.update(_ - 1) *> coordinator
             }
           )
         }

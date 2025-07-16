@@ -5,7 +5,7 @@ import kyo.*
 
 extension [S](self: Boolean < S)
   def ifEff[A](`then`: => A < S, `else`: => A < S): A < S =
-    self.flatMap(if _ then `then` else `else`)
+    self.map(if _ then `then` else `else`)
 
 class KyoScraper(
     fetch: Fetch[Kyo],
@@ -16,21 +16,20 @@ class KyoScraper(
     parallelism: Int = 8,
     queueCapacity: Int = 10
 ):
-  def start: Unit < (Async & Abort[Throwable]) =
+  def start: Unit < (Async & Abort[Throwable]) = Scope.run:
     for
       queue <- Channel.init[Scrape | Done | Throwable](queueCapacity, access = Access.MultiProducerSingleConsumer)
       semaphore <- Meter.initSemaphore(parallelism)
       visited <- AtomicRef.init[Set[Uri]](Set.empty)
-      spawned <- AtomicLong.init(0)
-      finished <- AtomicLong.init(0)
+      inFlight <- AtomicRef.init(0)
       _ <- queue.put(Scrape(root, 0))
-      _ <- Kyo.scoped {
-        def coordinator: Unit < (Resource & Abort[Throwable] & Async) =
-          (queue.empty <*> spawned.get <*> finished.get)
-            .map { case ((empty, spawned), done) => empty && spawned == done }
+      _ <- Scope.run:
+        Loop.foreach:
+          (queue.empty <*> inFlight.get)
+            .map { case (empty, inFlight) => empty && inFlight == 0 }
             .ifEff(
-              Kyo.unit,
-              queue.take.flatMap {
+              Loop.done,
+              queue.take.map:
                 case ex: Throwable => Kyo.fail(ex)
                 case Scrape(uri, depth) =>
                   given trace: Trace = Trace(uri)
@@ -42,21 +41,15 @@ class KyoScraper(
                       else
                         for
                           _ <- visited.updateAndGet(_ + uri)
-                          spawned <- spawned.updateAndGet(_ + 1)
-                          done <- finished.get
+                          _ <- inFlight.updateAndGet(_ + 1)
                           _ <- Kyo.logInfo(s"$trace: KyoScraper: crawling $uri")
                           fiber <- crawl(uri, depth, queue, semaphore).forkScoped
                           _ <- fiber.onInterrupt(_ => Kyo.logInfo(s"$trace: KyoScraper: cancelled $uri"))
                         yield ()
-                    _ <- coordinator
-                  yield ()
+                  yield Loop.continue
                 case Done =>
-                  finished.updateAndGet(_ + 1) *> coordinator
-              }
+                  inFlight.updateAndGet(_ - 1) *> Loop.continue
             )
-
-        coordinator
-      }
       _ <- Kyo.logInfo("KyoScraper: Finished.")
     yield ()
 
@@ -67,7 +60,7 @@ class KyoScraper(
       Kyo.scoped:
         Resource
           .ensure(queue.put(Done))
-          .andThen {
+          .andThen:
             for
               content <- fetch.fetch(uri)
               (links, markdown) <- Abort.get(MdConverter.convertAndExtractLinks(content, uri, selector))
@@ -75,9 +68,5 @@ class KyoScraper(
               persist = store.store(Names.toFilename(uri, root), markdown)
               _ <- Async.zip(pushFrontier, persist)
             yield ()
-          }
-          .recover { case ex => queue.put(ex) }
-
-// notes:
-// Queue is Channel and that can be closed which is
-// Unit < S is a gotcha as FUCK
+          .recover:
+            case ex => queue.put(ex)

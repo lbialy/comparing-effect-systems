@@ -5,7 +5,7 @@ import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future, blocking}
 import cats.effect.IO
 import zio.{Task => ZTask, ZIO}
-import kyo.{IO => KyoIO, Result => KyoResult, *}
+import kyo.{Result => KyoResult, *}
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -402,9 +402,9 @@ def makeScrapers(
             maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
             for
               _ <- maybeDelay.fold(Kyo.unit)(d => Kyo.sleep(kyo.Duration.fromScala(d)))
-              _ <- KyoIO(visitedUris.getAndUpdate(_ :+ path))
-              result <- maybeError.fold(KyoIO(Templating.page(links)))(e => Kyo.fail(e))
-              _ <- KyoIO(currentPending.decrementAndGet())
+              _ <- Sync.defer(visitedUris.getAndUpdate(_ :+ path))
+              result <- maybeError.fold(Sync.defer(Templating.page(links)))(e => Kyo.fail(e))
+              _ <- Sync.defer(currentPending.decrementAndGet())
             yield result
           case None =>
             Kyo.fail(Exception(s"$trace: Page not found: $uri"))

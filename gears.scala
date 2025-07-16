@@ -23,13 +23,13 @@ class GearsScraper(
     queue.put(Scrape(root, 0))
 
     Async.blocking:
-      coordinator(Set.empty, 0L, 0L)
+      coordinator(Set.empty, 0)
 
     println("GearsScraper: Finished.")
 
   @tailrec
-  private def coordinator(visited: Set[Uri], spawned: Long, done: Long)(using Async.Spawn): Unit =
-    if queue.isEmpty && spawned == done then ()
+  private def coordinator(visited: Set[Uri], inFlight: Int)(using Async.Spawn): Unit =
+    if queue.isEmpty && inFlight == 0 then ()
     else
       queue.take() match
         case ex: Throwable => throw ex
@@ -37,7 +37,7 @@ class GearsScraper(
           given trace: Trace = Trace(uri)
           if depth >= maxDepth then
             println(s"$trace: GearsScraper: Skipping $uri because max depth was reached")
-            coordinator(visited, spawned, done)
+            coordinator(visited, inFlight)
           else if !visited.contains(uri) then
             println(s"$trace: GearsScraper: crawling $uri")
             Future:
@@ -45,12 +45,12 @@ class GearsScraper(
                 case Left(ex) => queue.put(ex)
                 case Right(_) => ()
 
-            coordinator(visited + uri, spawned + 1, done)
+            coordinator(visited + uri, inFlight + 1)
           else
             println(s"$trace: GearsScraper: Skipping $uri because it has already been visited")
-            coordinator(visited, spawned, done)
+            coordinator(visited, inFlight)
         case Done =>
-          coordinator(visited, spawned, done + 1)
+          coordinator(visited, inFlight - 1)
 
   private def crawl(uri: Uri, depth: Int)(using trace: Trace, async: Async): Result[Unit] =
     boundary[Result[Unit]]:

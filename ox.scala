@@ -21,31 +21,31 @@ class OxScraper(
     queue.put(Scrape(root, 0))
 
     supervised:
-      coordinator(Set.empty, 0L, 0L)
+      coordinator(Set.empty, 0)
 
     println("OxScraper: Finished.")
   end start
 
   @tailrec
-  private def coordinator(visited: Set[Uri], spawned: Long, done: Long)(using Ox): Unit =
-    if queue.isEmpty && spawned == done then ()
+  private def coordinator(visited: Set[Uri], inFlight: Int)(using Ox): Unit =
+    if queue.isEmpty && inFlight == 0 then ()
     else
       queue.take() match
         case Scrape(uri, depth) =>
           given trace: Trace = Trace(uri)
           if depth >= maxDepth then
             println(s"$trace: Skipping $uri because max depth was reached")
-            coordinator(visited, spawned, done)
+            coordinator(visited, inFlight)
           else if !visited.contains(uri) then
             println(s"$trace: OxScraper: crawling $uri")
             forkUser:
               crawl(uri, depth).orThrow
-            coordinator(visited + uri, spawned + 1, done)
+            coordinator(visited + uri, inFlight + 1)
           else
             println(s"$trace: Skipping $uri because it has already been visited")
-            coordinator(visited, spawned, done)
+            coordinator(visited, inFlight)
         case Done =>
-          coordinator(visited, spawned, done + 1)
+          coordinator(visited, inFlight - 1)
 
   private def crawl(uri: Uri, depth: Int)(using trace: Trace): Result[Unit] = either:
     semaphore.acquire()

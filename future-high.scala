@@ -2,7 +2,7 @@ package ma.chinespirit.crawldown
 
 import scala.concurrent.*
 import scala.concurrent.duration.Duration
-import java.util.concurrent.{ArrayBlockingQueue, LinkedBlockingQueue}
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.*
 import sttp.model.Uri
 import scala.util.*

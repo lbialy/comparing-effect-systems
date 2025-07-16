@@ -28,11 +28,11 @@ class FutureScraper(
   def start(): Unit =
     queue.put(Scrape(root, 0))
     val visited = Set.empty[Uri]
-    coordinator(visited, 0L, 0L)
+    coordinator(visited, 0)
     println("FutureScraper: Finished.")
 
-  private def coordinator(visited: Set[Uri], spawned: Long, done: Long): Unit =
-    if queue.isEmpty && spawned == done then ()
+  private def coordinator(visited: Set[Uri], inFlight: Int): Unit =
+    if queue.isEmpty && inFlight == 0 then ()
     else
       queue.take() match
         case ex: Throwable => throw ex
@@ -41,17 +41,17 @@ class FutureScraper(
 
           if depth >= maxDepth then
             println(s"$trace: Skipping $url because max depth was reached")
-            coordinator(visited, spawned, done)
+            coordinator(visited, inFlight)
           else if !visited.contains(url) then
             println(s"$trace: FutureScraper: Crawling $url")
             crawl(url, depth)
-            coordinator(visited + url, spawned + 1, done)
+            coordinator(visited + url, inFlight + 1)
           else
             println(s"$trace: Skipping $url because it has already been visited")
-            coordinator(visited, spawned, done)
+            coordinator(visited, inFlight)
 
         case Done =>
-          coordinator(visited, spawned, done + 1)
+          coordinator(visited, inFlight - 1)
 
   private def crawl(uri: Uri, depth: Int)(using trace: Trace): Future[Unit] =
     val result = for

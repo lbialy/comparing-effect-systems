@@ -8,12 +8,12 @@ import sttp.client4.quick.*
 import java.util.UUID
 import cats.effect.IO
 import zio.{Task => ZTask, ZIO}
-import kyo.{IO => KyoIO, Async => KyoAsync, *}
+import kyo.{Async => KyoAsync, Sync => KyoSync, *}
 import gears.async.{Future => GearsFuture, *}
 
 type Result[+A] = Either[Throwable, A]
 
-type Kyo[+A] = A < (KyoAsync & KyoIO & Abort[Throwable])
+type Kyo[+A] = A < (KyoAsync & KyoSync & Abort[Throwable])
 
 case class Scrape(uri: Uri, depth: Int)
 sealed trait Done
@@ -60,11 +60,11 @@ object Fetch:
 
   def kyo: Fetch[Kyo] = new Fetch[Kyo]:
     def fetch(uri: Uri)(using trace: Trace): Kyo[String] =
-      KyoIO(basicRequest.get(uri).send()).flatMap { response =>
+      KyoSync.defer(basicRequest.get(uri).send()).flatMap { response =>
         response.body match
           case Left(error) =>
             Abort.fail(Exception(s"$trace: Failed to fetch $uri: $error"))
-          case Right(body) => KyoIO(body)
+          case Right(body) => KyoSync.defer(body)
       }
 
   def sync: Fetch[Result] = new Fetch[Result]:
@@ -111,7 +111,7 @@ object Store:
     new Store[Kyo]:
       def store(key: String, value: String)(using trace: Trace): Kyo[Unit] =
         // KyoIO(println(s"$trace: Storing $key")).andThen:
-        KyoIO(Abort.catching(os.write(dir / key, value)))
+        KyoSync.defer(Abort.catching(os.write(dir / key, value)))
 
   def sync(dir: os.Path): Store[Result] =
     os.makeDir.all(dir)
