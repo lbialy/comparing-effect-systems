@@ -1,6 +1,5 @@
 package ma.chinespirit.crawldown
 
-import java.util.concurrent.{ArrayBlockingQueue, LinkedBlockingQueue}
 import java.util.concurrent.atomic.*
 import sttp.model.Uri
 import ox.*, either.*, channels.*

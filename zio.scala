@@ -1,7 +1,7 @@
 package ma.chinespirit.crawldown
 
-import zio.{Task => ZTask, Trace => ZTrace, *}
 import sttp.model.Uri
+import zio.{Task as ZTask, *}
 
 class ZIOScraper(
     fetch: Fetch[ZTask],

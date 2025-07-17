@@ -1,17 +1,17 @@
 package ma.chinespirit.crawldown
 
-import sttp.model.Uri
-import scala.concurrent.{ExecutionContext, Future, blocking}
-import java.nio.file.{Files, Path, Paths}
-import java.nio.charset.StandardCharsets
-import sttp.client4.quick.*
-import java.util.UUID
-import cats.effect.{Sync, IO}
-import cats.Monad
+import cats.effect.IO
+import cats.effect.Sync
 import cats.syntax.all.*
-import zio.{Task => ZTask, ZIO}
-import kyo.{Async => KyoAsync, Sync => KyoSync, *}
-import gears.async.{Future => GearsFuture}
+import kyo.{Async as KyoAsync, Sync as KyoSync, *}
+import sttp.client4.quick.*
+import sttp.model.Uri
+import zio.Task as ZTask
+import zio.ZIO
+
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.blocking
 
 type Result[+A] = Either[Throwable, A]
 
@@ -20,11 +20,6 @@ type Kyo[+A] = A < (KyoAsync & KyoSync & Abort[Throwable])
 case class Scrape(uri: Uri, depth: Int)
 sealed trait Done
 case object Done extends Done
-
-case class Trace(id: UUID, uri: Uri):
-  override def toString(): String = s"[$id: $uri]"
-object Trace:
-  def apply(uri: Uri): Trace = Trace(UUID.randomUUID(), uri)
 
 trait Fetch[F[_]]:
   def fetch(uri: Uri): F[String]
@@ -48,6 +43,15 @@ object Fetch:
           case Left(error) =>
             IO.raiseError(Exception(s"Failed to fetch $uri: $error"))
           case Right(body) => IO.pure(body)
+      }
+
+  def catsTF[F[_]: Sync]: Fetch[F] = new Fetch[F]:
+    def fetch(uri: Uri): F[String] =
+      Sync[F].blocking(basicRequest.get(uri).send()).flatMap { response =>
+        response.body match
+          case Left(error) =>
+            Sync[F].raiseError(Exception(s"Failed to fetch $uri: $error"))
+          case Right(body) => Sync[F].pure(body)
       }
 
   def zio: Fetch[ZTask] = new Fetch[ZTask]:
@@ -95,6 +99,13 @@ object Store:
     new Store[IO]:
       def store(key: String, value: String): IO[Unit] =
         IO.blocking(os.write(dir / key, value))
+
+  def catsTF[F[_]: Sync](dir: os.Path): Store[F] =
+    os.makeDir.all(dir)
+
+    new Store[F]:
+      def store(key: String, value: String): F[Unit] =
+        Sync[F].blocking(os.write(dir / key, value))
 
   def zio(dir: os.Path): Store[ZTask] =
     os.makeDir.all(dir)

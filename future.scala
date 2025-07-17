@@ -2,11 +2,8 @@ package ma.chinespirit.crawldown
 
 import java.util.concurrent.*
 import scala.concurrent.{Future, ExecutionContext}
-import scala.collection.mutable
-import scala.jdk.CollectionConverters.*
 import sttp.model.Uri
 import scala.util.*
-import java.util.concurrent.atomic.AtomicBoolean
 
 extension [A](either: => Either[Throwable, A])
   def toFuture: Future[A] =

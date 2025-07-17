@@ -4,7 +4,6 @@ import munit.FunSuite
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, DurationInt}
 import scala.collection.immutable.SortedSet
-import scala.collection.immutable.TreeMap
 
 // properties to test
 // - 1. X crawler crawls pages in parallel

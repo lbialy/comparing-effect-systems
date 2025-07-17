@@ -1,38 +1,38 @@
 package ma.chinespirit.crawldown
 
-import cats.effect.{IO, Ref}
+import cats.effect.{Ref, Concurrent}
 import cats.effect.std.Queue
+import cats.*
 import cats.syntax.all.*
 import sttp.model.Uri
 
-final class CatsScraperHighLevel(
-    fetch: Fetch[IO],
-    store: Store[IO],
+final class CatsScraperHighLevelTF[F[_]: Concurrent: NonEmptyParallel](
+    fetch: Fetch[F],
+    store: Store[F],
     root: Uri,
     selector: Option[String],
     maxDepth: Int,
     parallelism: Int = 8
 ):
-
-  def start: IO[Unit] =
+  def start: F[Unit] =
     for
-      queue <- Queue.unbounded[IO, Scrape | Done]
-      visited <- Ref.of[IO, Set[Uri]](Set.empty)
-      inFlight <- Ref.of[IO, Int](0)
+      queue <- Queue.unbounded[F, Scrape | Done]
+      visited <- Ref.of[F, Set[Uri]](Set.empty)
+      inFlight <- Ref.of[F, Int](0)
       _ <- inFlight.update(_ + 1)
       _ <- queue.offer(Scrape(root, 0))
-      _ <- IO.parSequenceN_(parallelism)(Vector.fill(parallelism)(worker(queue, visited, inFlight)))
+      _ <- Concurrent[F].parSequenceN_(parallelism)(Vector.fill(parallelism)(worker(queue, visited, inFlight)))
     yield ()
 
-  private def worker(queue: Queue[IO, Scrape | Done], visited: Ref[IO, Set[Uri]], inFlight: Ref[IO, Int]): IO[Unit] =
+  private def worker(queue: Queue[F, Scrape | Done], visited: Ref[F, Set[Uri]], inFlight: Ref[F, Int]): F[Unit] =
     queue.take.flatMap {
-      case Done => IO.unit
+      case Done => Applicative[F].unit
       case Scrape(uri, depth) =>
         val handleUri =
-          if depth >= maxDepth then IO.unit
+          if depth >= maxDepth then Applicative[F].unit
           else
             visited.getAndUpdate(_ + uri).flatMap { visitedSet =>
-              if visitedSet.contains(uri) then IO.unit
+              if visitedSet.contains(uri) then Applicative[F].unit
               else crawl(uri, depth, queue, inFlight)
             }
 
@@ -42,10 +42,10 @@ final class CatsScraperHighLevel(
         }
     }
 
-  private def crawl(uri: Uri, depth: Int, queue: Queue[IO, Scrape | Done], inFlight: Ref[IO, Int]): IO[Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue[F, Scrape | Done], inFlight: Ref[F, Int]): F[Unit] =
     for
       content <- fetch.fetch(uri)
-      (links, markdown) <- IO.fromEither(MdConverter.convertAndExtractLinks(content, uri, selector))
+      (links, markdown) <- MonadError[F, Throwable].fromEither(MdConverter.convertAndExtractLinks(content, uri, selector))
       pushFrontier = links.traverse_(uri => inFlight.updateAndGet(_ + 1) *> queue.offer(Scrape(uri, depth + 1)))
       persist = store.store(Names.toFilename(uri, root), markdown)
       _ <- (pushFrontier, persist).parTupled
