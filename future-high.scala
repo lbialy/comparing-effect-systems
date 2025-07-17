@@ -26,19 +26,13 @@ class FutureScraperHighLevel(
 
     Await.result(Future.sequence(Vector.fill(parallelism)(worker(queue, inFlight))), Duration.Inf)
 
-    println("FutureScraperHighLevel: Finished.")
-
   private def worker(queue: LinkedBlockingQueue[Scrape | Done], inFlight: AtomicInteger): Future[Unit] =
     Future { blocking(queue.take()) }.flatMap {
       case Scrape(uri, depth) =>
-        given trace: Trace = Trace(uri)
-        val result = if depth >= maxDepth then
-          println(s"$trace: FutureScraperHighLevel: depth limit – skipping $uri")
-          Future.unit
-        else if visited.getAndUpdate(_ + uri).contains(uri) then
-          println(s"$trace: FutureScraperHighLevel: skipping $uri")
-          Future.unit
-        else crawl(uri, depth)
+        val result =
+          if depth >= maxDepth then Future.unit
+          else if visited.getAndUpdate(_ + uri).contains(uri) then Future.unit
+          else crawl(uri, depth)
 
         result.transformWith {
           case Success(_) =>
@@ -50,13 +44,11 @@ class FutureScraperHighLevel(
         }
 
       case Done =>
-        println(s"FutureScraperHighLevel: Received poison pill.")
         Future.unit
     }
 
-  private def crawl(uri: Uri, depth: Int)(using trace: Trace): Future[Unit] =
+  private def crawl(uri: Uri, depth: Int): Future[Unit] =
     for
-      _ <- Future { println(s"$trace: FutureScraperHighLevel: crawling $uri") }
       content <- fetch.fetch(uri)
       (links, markdown) <- MdConverter.convertAndExtractLinks(content, uri, selector).toFuture
       pushFrontier = Future {

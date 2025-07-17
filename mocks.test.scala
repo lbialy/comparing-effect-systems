@@ -3,9 +3,10 @@ package ma.chinespirit.crawldown
 import sttp.model.Uri, Uri.*
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future, blocking}
-import cats.effect.IO
+import cats.effect.{Async, IO, Sync}
+import cats.syntax.all.*
 import zio.{Task => ZTask, ZIO}
-import kyo.{Result => KyoResult, *}
+import kyo.{Result => KyoResult, Sync => KyoSync, Async => KyoAsync, *}
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -278,7 +279,7 @@ def makeScrapers(
       val maxSeen = AtomicInteger(0)
       val currentPending = AtomicInteger(0)
 
-      def fetch(uri: Uri)(using trace: Trace): Future[String] =
+      def fetch(uri: Uri): Future[String] =
         val path = normalisePath(uri)
         routes.get(path) match
           case Some(PageSpec(links, delay, error)) =>
@@ -294,9 +295,9 @@ def makeScrapers(
               error.fold(Templating.page(links))(e => throw e)
             }
 
-          case None => Future.failed(Exception(s"$trace: Page not found: $uri"))
+          case None => Future.failed(Exception(s"Page not found: $uri"))
 
-      def store(key: String, value: String)(using trace: Trace): Future[Unit] =
+      def store(key: String, value: String): Future[Unit] =
         Future.unit
 
       def visited: Vector[String] = visitedUris.get()
@@ -309,7 +310,7 @@ def makeScrapers(
       val maxSeen = AtomicInteger(0)
       val currentPending = AtomicInteger(0)
 
-      def fetch(uri: Uri)(using trace: Trace): Result[String] =
+      def fetch(uri: Uri): Result[String] =
         val path = normalisePath(uri)
         routes.get(path) match
           case Some(PageSpec(links, delay, error)) =>
@@ -323,10 +324,38 @@ def makeScrapers(
             currentPending.decrementAndGet()
             error.fold(Right(Templating.page(links)))(Left(_))
 
-          case None => Left(Exception(s"$trace: Page not found: $uri"))
+          case None => Left(Exception(s"Page not found: $uri"))
 
-      def store(key: String, value: String)(using trace: Trace): Result[Unit] =
+      def store(key: String, value: String): Result[Unit] =
         Right(())
+
+      def visited: Vector[String] = visitedUris.get()
+
+      def maxParallelism: Int = maxSeen.get()
+
+  def makeCatsServicesTF[F[_]: Async]: Fetch[F] & Store[F] & MockMetadata =
+    new Fetch[F] with Store[F] with MockMetadata:
+      val visitedUris = AtomicReference(Vector.empty[String])
+      val maxSeen = AtomicInteger(0)
+      val currentPending = AtomicInteger(0)
+
+      def fetch(uri: Uri): F[String] =
+        val path = normalisePath(uri)
+        routes.get(path) match
+          case Some(PageSpec(links, maybeDelay, maybeError)) =>
+            currentPending.incrementAndGet()
+            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+            for
+              _ <- maybeDelay.fold(Sync[F].unit)(d => Async[F].sleep(d))
+              _ <- Sync[F].delay(visitedUris.getAndUpdate(_ :+ path))
+              result <- maybeError.fold(Sync[F].delay(Templating.page(links)))(e => Sync[F].raiseError(e))
+              _ <- Sync[F].delay(currentPending.decrementAndGet())
+            yield result
+          case None =>
+            Sync[F].raiseError(Exception(s"Page not found: $uri"))
+
+      def store(key: String, value: String): F[Unit] =
+        Sync[F].unit
 
       def visited: Vector[String] = visitedUris.get()
 
@@ -338,7 +367,7 @@ def makeScrapers(
       val maxSeen = AtomicInteger(0)
       val currentPending = AtomicInteger(0)
 
-      def fetch(uri: Uri)(using trace: Trace): IO[String] =
+      def fetch(uri: Uri): IO[String] =
         val path = normalisePath(uri)
         routes.get(path) match
           case Some(PageSpec(links, maybeDelay, maybeError)) =>
@@ -351,9 +380,9 @@ def makeScrapers(
               _ <- IO(currentPending.decrementAndGet())
             yield result
           case None =>
-            IO.raiseError(Exception(s"$trace: Page not found: $uri"))
+            IO.raiseError(Exception(s"Page not found: $uri"))
 
-      def store(key: String, value: String)(using trace: Trace): IO[Unit] =
+      def store(key: String, value: String): IO[Unit] =
         IO.unit
 
       def visited: Vector[String] = visitedUris.get()
@@ -366,7 +395,7 @@ def makeScrapers(
       val maxSeen = AtomicInteger(0)
       val currentPending = AtomicInteger(0)
 
-      def fetch(uri: Uri)(using trace: Trace): ZTask[String] =
+      def fetch(uri: Uri): ZTask[String] =
         val path = normalisePath(uri)
         routes.get(path) match
           case Some(PageSpec(links, maybeDelay, maybeError)) =>
@@ -379,9 +408,9 @@ def makeScrapers(
               _ <- ZIO.succeed(currentPending.decrementAndGet())
             yield result
           case None =>
-            ZIO.fail(Exception(s"$trace: Page not found: $uri"))
+            ZIO.fail(Exception(s"Page not found: $uri"))
 
-      def store(key: String, value: String)(using trace: Trace): ZTask[Unit] =
+      def store(key: String, value: String): ZTask[Unit] =
         ZIO.unit
 
       def visited: Vector[String] = visitedUris.get()
@@ -394,7 +423,7 @@ def makeScrapers(
       val maxSeen = AtomicInteger(0)
       val currentPending = AtomicInteger(0)
 
-      def fetch(uri: Uri)(using trace: Trace): Kyo[String] =
+      def fetch(uri: Uri): Kyo[String] =
         val path = normalisePath(uri)
         routes.get(path) match
           case Some(PageSpec(links, maybeDelay, maybeError)) =>
@@ -402,14 +431,14 @@ def makeScrapers(
             maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
             for
               _ <- maybeDelay.fold(Kyo.unit)(d => Kyo.sleep(kyo.Duration.fromScala(d)))
-              _ <- Sync.defer(visitedUris.getAndUpdate(_ :+ path))
-              result <- maybeError.fold(Sync.defer(Templating.page(links)))(e => Kyo.fail(e))
-              _ <- Sync.defer(currentPending.decrementAndGet())
+              _ <- KyoSync.defer(visitedUris.getAndUpdate(_ :+ path))
+              result <- maybeError.fold(KyoSync.defer(Templating.page(links)))(e => Kyo.fail(e))
+              _ <- KyoSync.defer(currentPending.decrementAndGet())
             yield result
           case None =>
-            Kyo.fail(Exception(s"$trace: Page not found: $uri"))
+            Kyo.fail(Exception(s"Page not found: $uri"))
 
-      def store(key: String, value: String)(using trace: Trace): Kyo[Unit] =
+      def store(key: String, value: String): Kyo[Unit] =
         Kyo.unit
 
       def visited: Vector[String] = visitedUris.get()

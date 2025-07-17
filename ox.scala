@@ -23,7 +23,6 @@ class OxScraper(
     supervised:
       coordinator(Set.empty, 0)
 
-    println("OxScraper: Finished.")
   end start
 
   @tailrec
@@ -32,22 +31,16 @@ class OxScraper(
     else
       queue.take() match
         case Scrape(uri, depth) =>
-          given trace: Trace = Trace(uri)
-          if depth >= maxDepth then
-            println(s"$trace: Skipping $uri because max depth was reached")
-            coordinator(visited, inFlight)
+          if depth >= maxDepth then coordinator(visited, inFlight)
           else if !visited.contains(uri) then
-            println(s"$trace: OxScraper: crawling $uri")
             forkUser:
               crawl(uri, depth).orThrow
             coordinator(visited + uri, inFlight + 1)
-          else
-            println(s"$trace: Skipping $uri because it has already been visited")
-            coordinator(visited, inFlight)
+          else coordinator(visited, inFlight)
         case Done =>
           coordinator(visited, inFlight - 1)
 
-  private def crawl(uri: Uri, depth: Int)(using trace: Trace): Result[Unit] = either:
+  private def crawl(uri: Uri, depth: Int): Result[Unit] = either:
     semaphore.acquire()
     try
       val content = fetch.fetch(uri).ok()
@@ -56,10 +49,6 @@ class OxScraper(
       def pushFrontier = links.map(Scrape(_, depth + 1)).foreach(queue.put)
       def persist = store.store(key, markdown).ok()
       par(pushFrontier, persist)
-    catch
-      case iex: InterruptedException =>
-        println(s"$trace: OxScraper: interrupted $uri")
-        throw iex
     finally
       semaphore.release()
       queue.put(Done)

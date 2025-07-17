@@ -27,16 +27,13 @@ class GearsScraperHighLevel(
     Async.blocking:
       Vector.fill(parallelism)(Future(worker(queue, inFlight))).awaitAllOrCancel
 
-    println("GearsScraperHighLevel: Finished.")
-
   @tailrec
   private def worker(queue: LinkedBlockingDeque[Scrape | Done], inFlight: AtomicInteger)(using Async): Unit =
     queue.take() match
-      case Done => println("GearsScraperHighLevel: Received poison pill.")
+      case Done => ()
       case Scrape(uri, depth) =>
-        given trace: Trace = Trace(uri)
-        if depth >= maxDepth then println(s"$trace: GearsScraperHighLevel: depth limit – skipping $uri")
-        else if visited.getAndUpdate(_ + uri).contains(uri) then println(s"$trace: GearsScraperHighLevel: skipping $uri")
+        if depth >= maxDepth then ()
+        else if visited.getAndUpdate(_ + uri).contains(uri) then ()
         else
           crawl(uri, depth) match
             case Left(e)  => throw e
@@ -46,26 +43,27 @@ class GearsScraperHighLevel(
         if currentInFlight > 0 then worker(queue, inFlight)
         else for _ <- 0 until parallelism do queue.put(Done)
 
-  private def crawl(uri: Uri, depth: Int)(using trace: Trace, async: Async): Result[Unit] =
-    boundary[Result[Unit]]:
-      val content = fetch.fetch(uri) match
-        case Left(e)        => break(Left(e))
-        case Right(content) => content
+  private def crawl(uri: Uri, depth: Int)(using async: Async): Result[Unit] =
+    JvmAsyncOperations.jvmInterruptible:
+      boundary[Result[Unit]]:
+        val content = fetch.fetch(uri) match
+          case Left(e)        => break(Left(e))
+          case Right(content) => content
 
-      val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector) match
-        case Left(e)                  => break(Left(e))
-        case Right((links, markdown)) => (links, markdown)
+        val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector) match
+          case Left(e)                  => break(Left(e))
+          case Right((links, markdown)) => (links, markdown)
 
-      val key = Names.toFilename(uri, root)
-      def pushFrontier = links.map(Scrape(_, depth + 1)).foreach { link =>
-        inFlight.incrementAndGet()
-        queue.put(link)
-      }
-      def persist = store.store(key, markdown) match
-        case Left(e)  => break(Left(e))
-        case Right(_) => ()
+        val key = Names.toFilename(uri, root)
+        def pushFrontier = links.map(Scrape(_, depth + 1)).foreach { link =>
+          inFlight.incrementAndGet()
+          queue.put(link)
+        }
+        def persist = store.store(key, markdown) match
+          case Left(e)  => break(Left(e))
+          case Right(_) => ()
 
-      Async.group:
-        Future(pushFrontier).zip(Future(persist)).await
+        Async.group:
+          Future(pushFrontier).zip(Future(persist)).await
 
-      Right(())
+        Right(())

@@ -29,7 +29,6 @@ class FutureScraper(
     queue.put(Scrape(root, 0))
     val visited = Set.empty[Uri]
     coordinator(visited, 0)
-    println("FutureScraper: Finished.")
 
   private def coordinator(visited: Set[Uri], inFlight: Int): Unit =
     if queue.isEmpty && inFlight == 0 then ()
@@ -37,23 +36,16 @@ class FutureScraper(
       queue.take() match
         case ex: Throwable => throw ex
         case Scrape(url, depth) =>
-          given trace: Trace = Trace(url)
-
-          if depth >= maxDepth then
-            println(s"$trace: Skipping $url because max depth was reached")
-            coordinator(visited, inFlight)
+          if depth >= maxDepth then coordinator(visited, inFlight)
           else if !visited.contains(url) then
-            println(s"$trace: FutureScraper: Crawling $url")
             crawl(url, depth)
             coordinator(visited + url, inFlight + 1)
-          else
-            println(s"$trace: Skipping $url because it has already been visited")
-            coordinator(visited, inFlight)
+          else coordinator(visited, inFlight)
 
         case Done =>
           coordinator(visited, inFlight - 1)
 
-  private def crawl(uri: Uri, depth: Int)(using trace: Trace): Future[Unit] =
+  private def crawl(uri: Uri, depth: Int): Future[Unit] =
     val result = for
       _ <- Future { semaphore.acquire() }
       content <- fetch.fetch(uri)

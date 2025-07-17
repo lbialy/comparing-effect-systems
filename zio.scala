@@ -30,17 +30,15 @@ class ZIOScraper(
             onFalse = queue.take.flatMap {
               case ex: Throwable => ZIO.fail(ex)
               case Scrape(uri, depth) =>
-                given trace: Trace = Trace(uri)
                 for
                   seen <- visitedRef.get.map(_.contains(uri))
                   _ <-
-                    if depth >= maxDepth then ZIO.logInfo(s"[$trace]: depth limit — skipping $uri")
-                    else if seen then ZIO.logInfo(s"[$trace]: already visited — skipping $uri")
+                    if depth >= maxDepth then ZIO.unit
+                    else if seen then ZIO.unit
                     else
                       for
                         _ <- visitedRef.update(_ + uri)
                         _ <- inFlightRef.update(_ + 1)
-                        _ <- ZIO.logInfo(s"[$trace]: ZIOScraper: crawling $uri")
                         _ <- crawl(uri, depth, queue, sem).forkScoped
                       yield ()
                   _ <- coordinator
@@ -52,7 +50,6 @@ class ZIOScraper(
 
         coordinator
       }
-      _ <- ZIO.logInfo("ZIOScraper: Finished.")
     yield ()
 
   private def crawl(
@@ -60,7 +57,7 @@ class ZIOScraper(
       depth: Int,
       queue: Queue[Scrape | Done | Throwable],
       semaphore: Semaphore
-  )(using trace: Trace): UIO[Unit] =
+  ): UIO[Unit] =
     semaphore
       .withPermit {
         for
@@ -73,4 +70,3 @@ class ZIOScraper(
       }
       .catchAll { case ex => queue.offer(ex).unit }
       .ensuring(queue.offer(Done).unit)
-      .onInterrupt(ZIO.logInfo(s"[$trace]: ZIOScraper: cancelled $uri"))

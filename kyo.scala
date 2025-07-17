@@ -32,30 +32,24 @@ class KyoScraper(
               queue.take.map:
                 case ex: Throwable => Kyo.fail(ex)
                 case Scrape(uri, depth) =>
-                  given trace: Trace = Trace(uri)
                   for
                     seen <- visited.get.map(_.contains(uri))
                     _ <-
-                      if depth >= maxDepth then Kyo.logInfo(s"$trace: depth limit – skipping $uri")
-                      else if seen then Kyo.logInfo(s"$trace: already visited – skipping $uri")
+                      if depth >= maxDepth then Kyo.unit
+                      else if seen then Kyo.unit
                       else
                         for
                           _ <- visited.updateAndGet(_ + uri)
                           _ <- inFlight.updateAndGet(_ + 1)
-                          _ <- Kyo.logInfo(s"$trace: KyoScraper: crawling $uri")
-                          fiber <- crawl(uri, depth, queue, semaphore).forkScoped
-                          _ <- fiber.onInterrupt(_ => Kyo.logInfo(s"$trace: KyoScraper: cancelled $uri"))
+                          _ <- crawl(uri, depth, queue, semaphore).forkScoped
                         yield ()
                   yield Loop.continue
                 case Done =>
                   inFlight.updateAndGet(_ - 1) *> Loop.continue
             )
-      _ <- Kyo.logInfo("KyoScraper: Finished.")
     yield ()
 
-  private def crawl(uri: Uri, depth: Int, queue: Channel[Scrape | Done | Throwable], semaphore: Meter)(using
-      trace: Trace
-  ): Unit < (Async & Abort[Throwable]) =
+  private def crawl(uri: Uri, depth: Int, queue: Channel[Scrape | Done | Throwable], semaphore: Meter): Unit < (Async & Abort[Throwable]) =
     semaphore.run:
       Kyo.scoped:
         Resource

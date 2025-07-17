@@ -19,19 +19,17 @@ class ZIOScraperHighLevel(
       _ <- inFlight.update(_ + 1)
       _ <- queue.offer(Scrape(root, 0))
       _ <- ZIO.collectAllParDiscard(Vector.fill(parallelism)(worker(queue, visitedRef, inFlight)))
-      _ <- ZIO.logInfo("ZIOScraperHighLevel: Finished.")
     yield ()
 
   private def worker(queue: Queue[Scrape | Done], visitedRef: Ref[Set[Uri]], inFlight: Ref[Int]): ZTask[Unit] =
     queue.take.flatMap {
-      case Done => ZIO.logInfo("ZIOScraperHighLevel: Received poison pill.") *> ZIO.unit
+      case Done => ZIO.unit
       case Scrape(uri, depth) =>
-        given trace: Trace = Trace(uri)
         val handleUri =
-          if depth >= maxDepth then ZIO.logInfo(s"$trace: ZIOScraperHighLevel: depth limit – skipping $uri")
+          if depth >= maxDepth then ZIO.unit
           else
             visitedRef.getAndUpdate(_ + uri).flatMap { visitedSet =>
-              if visitedSet.contains(uri) then ZIO.logInfo(s"$trace: ZIOScraperHighLevel: already visited – skipping $uri")
+              if visitedSet.contains(uri) then ZIO.unit
               else crawl(uri, depth, queue, inFlight)
             }
 
@@ -41,14 +39,8 @@ class ZIOScraperHighLevel(
         }
     }
 
-  private def crawl(
-      uri: Uri,
-      depth: Int,
-      queue: Queue[Scrape | Done],
-      inFlight: Ref[Int]
-  )(using trace: Trace): ZTask[Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue[Scrape | Done], inFlight: Ref[Int]): ZTask[Unit] =
     for
-      _ <- ZIO.logInfo(s"$trace: ZIOScraperHighLevel: crawling $uri")
       content <- fetch.fetch(uri)
       (links, markdown) <- ZIO.fromEither(MdConverter.convertAndExtractLinks(content, uri, selector))
       pushFrontier = ZIO.foreachDiscard(links)(l => inFlight.updateAndGet(_ + 1) *> queue.offer(Scrape(l, depth + 1)))

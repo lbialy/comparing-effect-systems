@@ -35,13 +35,12 @@ final class CatsScraper(
                   for
                     seen <- visited.get.map(_.contains(uri))
                     _ <-
-                      if depth >= maxDepth then IO.println(s"$trace: depth limit – skipping $uri")
-                      else if seen then IO.println(s"$trace: already visited – skipping $uri")
+                      if depth >= maxDepth then IO.unit
+                      else if seen then IO.unit
                       else
                         for
                           _ <- visited.update(_ + uri)
                           _ <- inFlight.update(_ + 1)
-                          _ <- IO.println(s"$trace: CatsScraper: crawling $uri")
                           _ <- supervisor.supervise(crawl(uri, depth, queue, semaphore))
                         yield ()
                     _ <- coordinator
@@ -52,7 +51,6 @@ final class CatsScraper(
 
         coordinator
       }
-      _ <- IO.println("CatsScraper: Finished.")
     yield ()
 
   private def crawl(
@@ -73,4 +71,3 @@ final class CatsScraper(
       }
       .handleErrorWith { case ex => queue.offer(ex) }
       .guarantee(queue.offer(Done))
-      .onCancel(IO.println(s"$trace: CatsScraper: cancelled $uri"))
