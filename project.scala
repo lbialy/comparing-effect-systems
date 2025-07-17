@@ -6,6 +6,7 @@
 ///> using option "-language:strictEquality"
 
 //> using option -Wunused:all
+//> using option -deprecation
 
 //> using dep com.softwaremill.sttp.client4::core:4.0.9
 //> using dep com.vladsch.flexmark:flexmark-html2md-converter:0.64.8

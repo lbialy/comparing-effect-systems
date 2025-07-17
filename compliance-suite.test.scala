@@ -75,7 +75,7 @@ class ComplianceSuite extends FunSuite:
       // depth 2, 20 links per page so a-t and then a/a-t, b/a-t and so on, 421 total
       val expected = SortedSet("index") ++
         ('a' to 't').map(_.toString) ++
-        ('a' to 't').flatMap(letter => ('a' to 't').map(letter + "/" + _))
+        ('a' to 't').flatMap(letter => ('a' to 't').map(char => s"$letter/$char"))
 
       assertEquals(expected.size, fixture.visited.size)
       assertEquals(fixture.visited.toSet, expected)

@@ -51,7 +51,7 @@ class KyoScraper(
 
   private def crawl(uri: Uri, depth: Int, queue: Channel[Scrape | Done | Throwable], semaphore: Meter): Unit < (Async & Abort[Throwable]) =
     semaphore.run:
-      Resource.run:
+      Scope.run:
         Resource
           .ensure(queue.put(Done))
           .andThen:
