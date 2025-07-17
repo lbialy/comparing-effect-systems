@@ -5,6 +5,8 @@
 ///> using option "-Wconf:msg=(unused.*value|discarded.*value|pure.*statement):error"
 ///> using option "-language:strictEquality"
 
+//> using option -Wunused:all
+
 //> using dep com.softwaremill.sttp.client4::core:4.0.9
 //> using dep com.vladsch.flexmark:flexmark-html2md-converter:0.64.8
 //> using dep com.lihaoyi::os-lib:0.11.4

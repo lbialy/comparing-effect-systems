@@ -1,13 +1,22 @@
 package ma.chinespirit.crawldown
 
-import sttp.model.Uri, Uri.*
-import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
-import scala.concurrent.{ExecutionContext, Future, blocking}
+import cats.effect.Async
 import cats.effect.IO
-import zio.{Task => ZTask, ZIO}
-import kyo.{Result => KyoResult, *}
-import java.util.concurrent.atomic.AtomicReference
+import cats.effect.Sync
+import cats.syntax.all.*
+import kyo.{Async as _, Result as _, Sync as KyoSync, *}
+import sttp.model.Uri
+import zio.Task as ZTask
+import zio.ZIO
+
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
+
+import Uri.*
 
 object Templating:
   def page(links: Set[String]): String =
@@ -108,6 +117,45 @@ def makeScrapers(
       maxDepth = scrapeMaxDepth,
       parallelism = scraperParallelism,
       queueCapacity = scraperQueueCapacity
+    )
+
+    new ScraperAdapter:
+      def maxParallelism: Int = services.maxParallelism
+      def visited: Vector[String] = services.visited
+      def hasDuplicates: Boolean = services.hasDuplicates
+      def run: Unit =
+        import cats.effect.unsafe.implicits.global
+        scraper.start.unsafeRunSync()
+
+  def makeCatsScraperTF: ScraperAdapter =
+    val services = makeCatsServicesTF[IO]
+    val scraper = CatsScraperTF(
+      fetch = services,
+      store = services,
+      root = uri"http://localhost:8080/",
+      selector = None,
+      maxDepth = scrapeMaxDepth,
+      parallelism = scraperParallelism,
+      queueCapacity = scraperQueueCapacity
+    )
+
+    new ScraperAdapter:
+      def maxParallelism: Int = services.maxParallelism
+      def visited: Vector[String] = services.visited
+      def hasDuplicates: Boolean = services.hasDuplicates
+      def run: Unit =
+        import cats.effect.unsafe.implicits.global
+        scraper.start.unsafeRunSync()
+
+  def makeCatsScraperHighTF: ScraperAdapter =
+    val services = makeCatsServicesTF[IO]
+    val scraper = CatsScraperHighLevelTF(
+      fetch = services,
+      store = services,
+      root = uri"http://localhost:8080/",
+      selector = None,
+      maxDepth = scrapeMaxDepth,
+      parallelism = scraperParallelism
     )
 
     new ScraperAdapter:
@@ -286,8 +334,8 @@ def makeScrapers(
               currentPending.incrementAndGet()
               maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
               delay.foreach {
-                case fin: FiniteDuration    => Thread.sleep(fin.toMillis)
-                case inf: Duration.Infinite => Thread.sleep(Long.MaxValue)
+                case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
+                case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
               }
               visitedUris.getAndUpdate(v => v :+ path)
               currentPending.decrementAndGet()
@@ -316,8 +364,8 @@ def makeScrapers(
             currentPending.incrementAndGet()
             maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
             delay.foreach {
-              case fin: FiniteDuration    => Thread.sleep(fin.toMillis)
-              case inf: Duration.Infinite => Thread.sleep(Long.MaxValue)
+              case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
+              case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
             }
             visitedUris.getAndUpdate(v => v :+ path)
             currentPending.decrementAndGet()
@@ -327,6 +375,34 @@ def makeScrapers(
 
       def store(key: String, value: String)(using trace: Trace): Result[Unit] =
         Right(())
+
+      def visited: Vector[String] = visitedUris.get()
+
+      def maxParallelism: Int = maxSeen.get()
+
+  def makeCatsServicesTF[F[_]: Async]: Fetch[F] & Store[F] & MockMetadata =
+    new Fetch[F] with Store[F] with MockMetadata:
+      val visitedUris = AtomicReference(Vector.empty[String])
+      val maxSeen = AtomicInteger(0)
+      val currentPending = AtomicInteger(0)
+
+      def fetch(uri: Uri)(using trace: Trace): F[String] =
+        val path = normalisePath(uri)
+        routes.get(path) match
+          case Some(PageSpec(links, maybeDelay, maybeError)) =>
+            currentPending.incrementAndGet()
+            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+            for
+              _ <- maybeDelay.fold(Sync[F].unit)(d => Async[F].sleep(d))
+              _ <- Sync[F].delay(visitedUris.getAndUpdate(_ :+ path))
+              result <- maybeError.fold(Sync[F].delay(Templating.page(links)))(e => Sync[F].raiseError(e))
+              _ <- Sync[F].delay(currentPending.decrementAndGet())
+            yield result
+          case None =>
+            Sync[F].raiseError(Exception(s"$trace: Page not found: $uri"))
+
+      def store(key: String, value: String)(using trace: Trace): F[Unit] =
+        Sync[F].unit
 
       def visited: Vector[String] = visitedUris.get()
 
@@ -402,9 +478,9 @@ def makeScrapers(
             maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
             for
               _ <- maybeDelay.fold(Kyo.unit)(d => Kyo.sleep(kyo.Duration.fromScala(d)))
-              _ <- Sync.defer(visitedUris.getAndUpdate(_ :+ path))
-              result <- maybeError.fold(Sync.defer(Templating.page(links)))(e => Kyo.fail(e))
-              _ <- Sync.defer(currentPending.decrementAndGet())
+              _ <- KyoSync.defer(visitedUris.getAndUpdate(_ :+ path))
+              result <- maybeError.fold(KyoSync.defer(Templating.page(links)))(e => Kyo.fail(e))
+              _ <- KyoSync.defer(currentPending.decrementAndGet())
             yield result
           case None =>
             Kyo.fail(Exception(s"$trace: Page not found: $uri"))
@@ -423,11 +499,13 @@ def makeScrapers(
     "kyo" -> makeKyoScraper,
     "ox" -> makeOxScraper,
     "gears" -> makeGearsScraper,
+    "cats-tf" -> makeCatsScraperTF,
     "future-high-level" -> makeFutureScraperHighLevel,
     "cats-high-level" -> makeCatsScraperHighLevel,
     "zio-high-level" -> makeZioScraperHighLevel,
     "kyo-high-level" -> makeKyoScraperHighLevel,
     "ox-high-level" -> makeOxScraperHighLevel,
-    "gears-high-level" -> makeGearsScraperHighLevel
+    "gears-high-level" -> makeGearsScraperHighLevel,
+    "cats-high-tf" -> makeCatsScraperHighTF
   )
 end makeScrapers

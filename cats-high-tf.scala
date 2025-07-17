@@ -1,7 +1,6 @@
 package ma.chinespirit.crawldown
 
-import cats.effect.{Sync, Ref, Concurrent}
-import cats.effect.kernel.GenSpawn
+import cats.effect.{Ref, Concurrent}
 import cats.effect.std.{Console, Queue}
 import cats.*
 import cats.syntax.all.*

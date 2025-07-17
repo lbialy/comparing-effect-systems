@@ -134,7 +134,7 @@ class RoutesSuite extends FunSuite:
 
   test("genTree with depth 10 and linksPerPage 1") {
     val result = Routes.genTree(10, 1) -- Set("index")
-    result.to(TreeMap).zipWithIndex.foreach { case ((k, v), i) =>
+    result.to(TreeMap).zipWithIndex.foreach { case ((k, _), i) =>
       val computedRoute = Vector.fill(i + 1)("a").mkString("/")
       assertEquals(k, computedRoute)
     }

@@ -69,4 +69,6 @@ class KyoScraper(
               _ <- Async.zip(pushFrontier, persist)
             yield ()
           .recover:
-            case ex => queue.put(ex)
+            case ex =>
+              Abort.recover[Closed](_ => ()):
+                queue.put(ex)

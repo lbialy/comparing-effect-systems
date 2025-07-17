@@ -2,14 +2,13 @@ package ma.chinespirit.crawldown
 
 import sttp.model.Uri
 import scala.concurrent.{ExecutionContext, Future, blocking}
-import java.nio.file.{Files, Path, Paths}
-import java.nio.charset.StandardCharsets
 import sttp.client4.quick.*
 import java.util.UUID
-import cats.effect.IO
+import kyo.{Async => KyoAsync, Sync => KyoSync, *> => _, *}
+import cats.effect.{IO, Sync}
+import cats.syntax.all.*
+import cats.effect.std.Console
 import zio.{Task => ZTask, ZIO}
-import kyo.{Async => KyoAsync, Sync => KyoSync, *}
-import gears.async.{Future => GearsFuture, *}
 
 type Result[+A] = Either[Throwable, A]
 
@@ -49,6 +48,15 @@ object Fetch:
           case Right(body) => IO.pure(body)
       }
 
+  def catsTF[F[_]: Sync]: Fetch[F] = new Fetch[F]:
+    def fetch(uri: Uri)(using trace: Trace): F[String] =
+      Sync[F].blocking(basicRequest.get(uri).send()).flatMap { response =>
+        response.body match
+          case Left(error) =>
+            Sync[F].raiseError(Exception(s"$trace: Failed to fetch $uri: $error"))
+          case Right(body) => Sync[F].pure(body)
+      }
+
   def zio: Fetch[ZTask] = new Fetch[ZTask]:
     def fetch(uri: Uri)(using trace: Trace): ZTask[String] =
       ZIO.attemptBlocking(basicRequest.get(uri).send()).flatMap { response =>
@@ -84,9 +92,9 @@ object Store:
 
     new Store[Future]:
       def store(key: String, value: String)(using trace: Trace): Future[Unit] =
-        // println(s"$trace: Storing $key")
         Future:
           blocking:
+            println(s"$trace: Storing $key")
             os.write(dir / key, value)
 
   def cats(dir: os.Path): Store[IO] =
@@ -94,31 +102,41 @@ object Store:
 
     new Store[IO]:
       def store(key: String, value: String)(using trace: Trace): IO[Unit] =
-        // IO.println(s"$trace: Storing $key") *>
-        IO.blocking(os.write(dir / key, value))
+        IO.println(s"$trace: Storing $key") *>
+          IO.blocking(os.write(dir / key, value))
+
+  def catsTF[F[_]: Sync: Console](dir: os.Path): Store[F] =
+    os.makeDir.all(dir)
+
+    new Store[F]:
+      def store(key: String, value: String)(using trace: Trace): F[Unit] =
+        Console[F].println(s"$trace: Storing $key") *>
+          Sync[F].blocking(os.write(dir / key, value))
 
   def zio(dir: os.Path): Store[ZTask] =
     os.makeDir.all(dir)
 
     new Store[ZTask]:
       def store(key: String, value: String)(using trace: Trace): ZTask[Unit] =
-        // ZIO.log(s"$trace: Storing $key") *>
-        ZIO.attemptBlocking(os.write(dir / key, value))
+        ZIO.logInfo(s"$trace: Storing $key") *>
+          ZIO.attemptBlocking(os.write(dir / key, value))
 
   def kyo(dir: os.Path): Store[Kyo] =
     os.makeDir.all(dir)
 
     new Store[Kyo]:
       def store(key: String, value: String)(using trace: Trace): Kyo[Unit] =
-        // KyoIO(println(s"$trace: Storing $key")).andThen:
-        KyoSync.defer(Abort.catching(os.write(dir / key, value)))
+        Kyo
+          .logInfo(s"$trace: Storing $key")
+          .andThen:
+            KyoSync.defer(Abort.catching(os.write(dir / key, value)))
 
   def sync(dir: os.Path): Store[Result] =
     os.makeDir.all(dir)
 
     new Store[Result]:
       def store(key: String, value: String)(using trace: Trace): Result[Unit] =
-        // println(s"$trace: Storing $key")
+        println(s"$trace: Storing $key")
         os.write(dir / key, value)
         Right(())
 
