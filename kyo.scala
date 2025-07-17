@@ -30,41 +30,41 @@ class KyoScraper(
             .ifEff(
               Loop.done,
               queue.take.map:
-                case ex: Throwable => Kyo.fail(ex)
+                case ex: Throwable => Abort.fail(ex)
                 case Scrape(uri, depth) =>
                   given trace: Trace = Trace(uri)
                   for
                     seen <- visited.get.map(_.contains(uri))
                     _ <-
-                      if depth >= maxDepth then Kyo.logInfo(s"$trace: depth limit – skipping $uri")
-                      else if seen then Kyo.logInfo(s"$trace: already visited – skipping $uri")
+                      if depth >= maxDepth then Log.info(s"$trace: depth limit – skipping $uri")
+                      else if seen then Log.info(s"$trace: already visited – skipping $uri")
                       else
                         for
                           _ <- visited.updateAndGet(_ + uri)
                           _ <- inFlight.updateAndGet(_ + 1)
-                          _ <- Kyo.logInfo(s"$trace: KyoScraper: crawling $uri")
+                          _ <- Log.info(s"$trace: KyoScraper: crawling $uri")
                           fiber <- crawl(uri, depth, queue, semaphore).forkScoped
-                          _ <- fiber.onInterrupt(_ => Kyo.logInfo(s"$trace: KyoScraper: cancelled $uri"))
+                          _ <- fiber.onInterrupt(_ => Log.info(s"$trace: KyoScraper: cancelled $uri"))
                         yield ()
                   yield Loop.continue
                 case Done =>
                   inFlight.updateAndGet(_ - 1) *> Loop.continue
             )
-      _ <- Kyo.logInfo("KyoScraper: Finished.")
+      _ <- Log.info("KyoScraper: Finished.")
     yield ()
 
   private def crawl(uri: Uri, depth: Int, queue: Channel[Scrape | Done | Throwable], semaphore: Meter)(using
       trace: Trace
   ): Unit < (Async & Abort[Throwable]) =
     semaphore.run:
-      Kyo.scoped:
+      Resource.run:
         Resource
           .ensure(queue.put(Done))
           .andThen:
             for
               content <- fetch.fetch(uri)
               (links, markdown) <- Abort.get(MdConverter.convertAndExtractLinks(content, uri, selector))
-              pushFrontier = Kyo.collectAllDiscard(links.map(url => queue.put(Scrape(url, depth + 1))))
+              pushFrontier = Async.collectAllDiscard(links.map(url => queue.put(Scrape(url, depth + 1))))
               persist = store.store(Names.toFilename(uri, root), markdown)
               _ <- Async.zip(pushFrontier, persist)
             yield ()
