@@ -5,7 +5,6 @@ import scala.concurrent.duration.Duration
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.*
 import sttp.model.Uri
-import scala.util.*
 
 class FutureScraperHighLevel(
     fetch: Fetch[Future],
@@ -34,13 +33,10 @@ class FutureScraperHighLevel(
           else if visited.getAndUpdate(_ + uri).contains(uri) then Future.unit
           else crawl(uri, depth)
 
-        result.transformWith {
-          case Success(_) =>
-            val currentInFlight = inFlight.decrementAndGet()
-            if currentInFlight > 0 then worker(queue, inFlight)
-            else Future(Vector.fill(parallelism)(Done).foreach(queue.put))
-          case Failure(ex) =>
-            Future.failed(ex)
+        result.flatMap { _ =>
+          val currentInFlight = inFlight.decrementAndGet()
+          if currentInFlight > 0 then worker(queue, inFlight)
+          else Future(Vector.fill(parallelism)(Done).foreach(queue.put))
         }
 
       case Done =>
