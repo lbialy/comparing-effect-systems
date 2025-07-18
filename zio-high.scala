@@ -1,17 +1,17 @@
 package ma.chinespirit.crawldown
 
 import sttp.model.Uri
-import zio.{Task as ZTask, *}
+import zio.*
 
 class ZIOScraperHighLevel(
-    fetch: Fetch[ZTask],
-    store: Store[ZTask],
+    fetch: Fetch[Task],
+    store: Store[Task],
     root: Uri,
     selector: Option[String],
     maxDepth: Int,
     parallelism: Int = 8
 ):
-  def start: ZTask[Unit] =
+  def start: Task[Unit] =
     for
       queue <- Queue.unbounded[Scrape | Done]
       visitedRef <- Ref.make(Set.empty[Uri])
@@ -21,7 +21,7 @@ class ZIOScraperHighLevel(
       _ <- ZIO.collectAllParDiscard(Vector.fill(parallelism)(worker(queue, visitedRef, inFlight)))
     yield ()
 
-  private def worker(queue: Queue[Scrape | Done], visitedRef: Ref[Set[Uri]], inFlight: Ref[Int]): ZTask[Unit] =
+  private def worker(queue: Queue[Scrape | Done], visitedRef: Ref[Set[Uri]], inFlight: Ref[Int]): Task[Unit] =
     queue.take.flatMap {
       case Done => ZIO.unit
       case Scrape(uri, depth) =>
@@ -39,7 +39,7 @@ class ZIOScraperHighLevel(
         }
     }
 
-  private def crawl(uri: Uri, depth: Int, queue: Queue[Scrape | Done], inFlight: Ref[Int]): ZTask[Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue[Scrape | Done], inFlight: Ref[Int]): Task[Unit] =
     for
       content <- fetch.fetch(uri)
       (links, markdown) <- ZIO.fromEither(MdConverter.convertAndExtractLinks(content, uri, selector))
