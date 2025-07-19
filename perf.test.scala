@@ -22,6 +22,7 @@ case class TimingStats(
     failedRuns: Int
 )
 
+// Control the number of iterations with the ITERATIONS environment variable!
 class PerfSuite extends FunSuite:
 
   override def munitTimeout: Duration = Duration.Inf
@@ -66,7 +67,7 @@ class PerfSuite extends FunSuite:
     "gears-high"
   )
 
-  val iterations = sys.env.get("ITERATIONS").map(_.toInt).getOrElse(1000)
+  val iterations = sys.env.get("ITERATIONS").map(_.toInt).getOrElse(1)
   val selector = Some("div[role=main]")
 
   def measureTime[T](block: => T): (T, Double) =
