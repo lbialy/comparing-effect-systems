@@ -3,7 +3,12 @@
 set -euo pipefail
 
 VARIANT=${1:-future}
+HOST=${2:-https://tapir.softwaremill.com/en/latest/}
+SELECTOR=${3:-'div[role=main]'}
 
-rm -fr tapir.softwaremill.com_en_latest
+# host is just the domain name with no scheme (drop both http and https), slashes replaced by underscores
+HOST_DIRNAME=$(echo $HOST | sed 's|^https://||; s|^http://||; s|/$||; s|/|_|g')
+
+rm -fr $HOST_DIRNAME
 scala package . -o crawldown -f
-./crawldown $VARIANT https://tapir.softwaremill.com/en/latest/
+./crawldown $VARIANT $HOST $SELECTOR

@@ -50,19 +50,18 @@ class KyoScraper(
     yield ()
 
   private def crawl(uri: Uri, depth: Int, queue: Channel[Scrape | Done | Throwable], semaphore: Meter): Unit < (Async & Abort[Throwable]) =
-    semaphore.run:
-      Scope.run:
-        Resource
-          .ensure(queue.put(Done))
-          .andThen:
-            for
-              content <- fetch.fetch(uri)
-              (links, markdown) <- Abort.get(MdConverter.convertAndExtractLinks(content, uri, selector))
-              pushFrontier = Async.collectAllDiscard(links.map(url => queue.put(Scrape(url, depth + 1))))
-              persist = store.store(Names.toFilename(uri, root), markdown)
-              _ <- Async.zip(pushFrontier, persist)
-            yield ()
-          .recover:
-            case ex =>
-              Abort.recover[Closed](_ => ()):
-                queue.put(ex)
+    Abort.recover[Closed](_ => ()):
+      semaphore.run:
+        Scope.run:
+          Resource
+            .ensure(queue.put(Done))
+            .andThen:
+              for
+                content <- fetch.fetch(uri)
+                (links, markdown) <- Abort.get(MdConverter.convertAndExtractLinks(content, uri, selector))
+                pushFrontier = Kyo.collectAllDiscard(links.map(url => queue.put(Scrape(url, depth + 1))))
+                persist = store.store(Names.toFilename(uri, root), markdown)
+                _ <- Async.zip(pushFrontier, persist)
+              yield ()
+            .recover:
+              case ex => queue.put(ex)

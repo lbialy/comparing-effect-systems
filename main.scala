@@ -39,12 +39,30 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
 
       scraper.start.unsafeRunSync()
 
+    case "cats-tf" =>
+      import cats.effect.unsafe.implicits.global
+
+      val fetch = Fetch.cats
+      val store = Store.cats(outputDir)
+      val scraper = CatsScraperTF(fetch, store, rootUri, selector, maxDepth = 20)
+
+      scraper.start.unsafeRunSync()
+
     case "cats-high" =>
       import cats.effect.unsafe.implicits.global
 
       val fetch = Fetch.cats
       val store = Store.cats(outputDir)
       val scraper = CatsScraperHighLevel(fetch, store, rootUri, selector, maxDepth = 20)
+
+      scraper.start.unsafeRunSync()
+
+    case "cats-high-tf" =>
+      import cats.effect.unsafe.implicits.global
+
+      val fetch = Fetch.cats
+      val store = Store.cats(outputDir)
+      val scraper = CatsScraperHighLevelTF(fetch, store, rootUri, selector, maxDepth = 20)
 
       scraper.start.unsafeRunSync()
 
@@ -121,8 +139,10 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
 @main def main(args: String*): Unit =
   args.toList match
     case variant :: root :: selector :: Nil =>
+      println(s"Running $variant with selector $selector")
       run(variant, root, Some(selector))
     case variant :: root :: Nil =>
+      println(s"Running $variant")
       run(variant, root, None)
     case _ =>
       println("Usage: crawldown <variant> <root> <selector?>")

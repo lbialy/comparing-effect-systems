@@ -25,3 +25,5 @@
 //> using dep ch.epfl.lamp::gears:0.2.0
 
 //> using test.dep org.scalameta::munit:1.1.1
+//> using test.dep com.softwaremill.sttp.tapir::tapir-files:1.11.37
+//> using test.dep com.softwaremill.sttp.tapir::tapir-jdkhttp-server:1.11.37
