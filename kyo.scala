@@ -19,39 +19,42 @@ class KyoScraper(
 ):
   def start: Unit < (Async & Abort[Throwable]) =
     tracing.root("start"):
-      Scope.run: // scope for Channel
-        for
-          queue <- Channel.init[Scrape | Done | Throwable](queueCapacity, access = Access.MultiProducerSingleConsumer)
-          semaphore <- Meter.initSemaphore(parallelism)
-          visited <- AtomicRef.init[Set[Uri]](Set.empty)
-          inFlight <- AtomicRef.init(0)
-          _ <- queue.put(Scrape(root, 0))
-          _ <-
-            Scope.run: // Scope for forked worker fibers
-              Loop.foreach:
-                (queue.empty <*> inFlight.get)
-                  .map { case (empty, inFlight) => empty && inFlight == 0 }
-                  .ifEff(
-                    Loop.done,
-                    queue.take.map:
-                      case ex: Throwable => Abort.fail(ex)
-                      case Scrape(uri, depth) =>
-                        for
-                          seen <- visited.get.map(_.contains(uri))
-                          _ <-
-                            if depth >= maxDepth then Kyo.unit
-                            else if seen then Kyo.unit
-                            else
+      tracing.span("coordinator (pre channel scope)"):
+        Scope.run: // scope for Channel
+          tracing.span("coordinator (in channel scope)"):
+            for
+              queue <- Channel.init[Scrape | Done | Throwable](queueCapacity, access = Access.MultiProducerSingleConsumer)
+              semaphore <- Meter.initSemaphore(parallelism)
+              visited <- AtomicRef.init[Set[Uri]](Set.empty)
+              inFlight <- AtomicRef.init(0)
+              _ <- queue.put(Scrape(root, 0))
+              _ <-
+                tracing.span("coordinator (pre loop scope)"):
+                  Scope.run: // Scope for forked worker fibers
+                    Loop.foreach:
+                      (queue.empty <*> inFlight.get)
+                        .map { case (empty, inFlight) => empty && inFlight == 0 }
+                        .ifEff(
+                          Loop.done,
+                          queue.take.map:
+                            case ex: Throwable => Abort.fail(ex)
+                            case Scrape(uri, depth) =>
                               for
-                                _ <- visited.updateAndGet(_ + uri)
-                                _ <- inFlight.updateAndGet(_ + 1)
-                                _ <- crawl(uri, depth, queue, semaphore).forkScoped
-                              yield ()
-                        yield Loop.continue
-                      case Done =>
-                        inFlight.updateAndGet(_ - 1) *> Loop.continue
-                  )
-        yield ()
+                                seen <- visited.get.map(_.contains(uri))
+                                _ <-
+                                  if depth >= maxDepth then Kyo.unit
+                                  else if seen then Kyo.unit
+                                  else
+                                    for
+                                      _ <- visited.updateAndGet(_ + uri)
+                                      _ <- inFlight.updateAndGet(_ + 1)
+                                      _ <- crawl(uri, depth, queue, semaphore).forkScoped
+                                    yield ()
+                              yield Loop.continue
+                            case Done =>
+                              inFlight.updateAndGet(_ - 1) *> Loop.continue
+                        )
+            yield ()
 
   private def crawl(uri: Uri, depth: Int, queue: Channel[Scrape | Done | Throwable], semaphore: Meter)(using
       Trace
