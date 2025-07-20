@@ -8,6 +8,7 @@ import kyo.<
 import kyo.Clock as KyoClock
 import kyo.Scope as KyoScope
 import kyo.Sync
+import kyo.Async
 import sttp.model.Uri
 import zio.Clock
 import zio.Scope
@@ -49,6 +50,10 @@ object SpanData:
 trait Tracing[F[_]]:
   def span[A](name: String)(body: Trace ?=> F[A])(using parent: Trace): F[A]
   def root[A](name: String)(body: Trace ?=> F[A]): F[A]
+
+trait TracingKyo:
+  def span[A, S](name: String)(body: Trace ?=> A < S)(using parent: Trace): A < (Async & S)
+  def root[A, S](name: String)(body: Trace ?=> A < S): A < (Async & S)
 
 object Tracing:
 
@@ -103,10 +108,10 @@ object Tracing:
         )
       yield res
 
-  class KyoTracing(spans: ConcurrentLinkedQueue[SpanData]) extends Tracing[Kyo]:
-    def span[A](n: String)(body: Trace ?=> Kyo[A])(using p: Trace): Kyo[A] =
+  class KyoTracing(spans: ConcurrentLinkedQueue[SpanData]) extends TracingKyo:
+    def span[A, S](n: String)(body: Trace ?=> A < S)(using p: Trace): A < (Async & S) =
       val childTrace = Trace(p.uri)
-      KyoScope.run {
+      KyoScope.run:
         for
           start <- KyoClock.now
           _ <- KyoScope.ensure(KyoClock.now.map { end =>
@@ -114,10 +119,10 @@ object Tracing:
           })
           res <- body(using childTrace)
         yield res
-      }
-    def root[A](n: String)(body: Trace ?=> Kyo[A]): Kyo[A] =
+
+    def root[A, S](n: String)(body: Trace ?=> A < S): A < (Async & S) =
       val rootTrace = Trace(None)
-      KyoScope.run {
+      KyoScope.run:
         for
           start <- KyoClock.now
           _ <- KyoScope.ensure(
@@ -127,7 +132,6 @@ object Tracing:
           )
           res <- body(using rootTrace)
         yield res
-      }
 
   class SyncTracing(spans: ConcurrentLinkedQueue[SpanData]) extends Tracing[Id]:
     def span[A](n: String)(body: Trace ?=> Id[A])(using p: Trace): Id[A] =
@@ -144,7 +148,7 @@ object Tracing:
   private def writeSpans(name: String, spans: ConcurrentLinkedQueue[SpanData]): Unit =
     os.makeDir.all(os.pwd / "traces")
     val file = os.pwd / "traces" / s"$name-traces.json"
-    os.write(file, writeToString(spans.asScala.toSeq.reverse))
+    os.write.over(file, writeToString(spans.asScala.toSeq.reverse))
 
   def future(name: String)(using ExecutionContext): (Tracing[Future], () => Unit) =
     val spans = ConcurrentLinkedQueue[SpanData]()
@@ -158,7 +162,7 @@ object Tracing:
     val spans = ConcurrentLinkedQueue[SpanData]()
     ZIO.acquireRelease(ZIO.succeed(ZioTracing(spans)))(_ => ZIO.attemptBlocking(writeSpans(name, spans)).orDie)
 
-  def kyo(name: String): Tracing[Kyo] < (KyoScope & Sync) =
+  def kyo(name: String): TracingKyo < (KyoScope & Sync) =
     val spans = ConcurrentLinkedQueue[SpanData]()
     KyoScope.ensure(Sync.defer(writeSpans(name, spans))).andThen(KyoTracing(spans))
 

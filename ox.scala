@@ -8,6 +8,7 @@ import scala.annotation.tailrec
 class OxScraper(
     fetch: Fetch[Result],
     store: Store[Result],
+    tracing: Tracing[Id],
     root: Uri,
     selector: Option[String],
     maxDepth: Int,
@@ -18,15 +19,16 @@ class OxScraper(
   private val semaphore = Semaphore(parallelism)
 
   def start(): Unit =
-    queue.put(Scrape(root, 0))
+    tracing.root("start"):
+      queue.put(Scrape(root, 0))
 
-    supervised:
-      coordinator(Set.empty, 0)
+      supervised:
+        coordinator(Set.empty, 0)
 
   end start
 
   @tailrec
-  private def coordinator(visited: Set[Uri], inFlight: Int)(using Ox): Unit =
+  private def coordinator(visited: Set[Uri], inFlight: Int)(using Ox, Trace): Unit =
     if queue.isEmpty && inFlight == 0 then ()
     else
       queue.take() match
@@ -40,15 +42,17 @@ class OxScraper(
         case Done =>
           coordinator(visited, inFlight - 1)
 
-  private def crawl(uri: Uri, depth: Int): Result[Unit] = either:
-    semaphore.acquire()
-    try
-      val content = fetch.fetch(uri).ok()
-      val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector).ok()
-      val key = Names.toFilename(uri, root)
-      def pushFrontier = links.map(Scrape(_, depth + 1)).foreach(queue.put)
-      def persist = store.store(key, markdown).ok()
-      par(pushFrontier, persist)
-    finally
-      semaphore.release()
-      queue.put(Done)
+  private def crawl(uri: Uri, depth: Int)(using Trace): Result[Unit] =
+    tracing.span(s"crawl(${uri.pathToString})"):
+      either:
+        semaphore.acquire()
+        try
+          val content = fetch.fetch(uri).ok()
+          val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector).ok()
+          val key = Names.toFilename(uri, root)
+          def pushFrontier = links.map(Scrape(_, depth + 1)).foreach(queue.put)
+          def persist = store.store(key, markdown).ok()
+          par(pushFrontier, persist)
+        finally
+          semaphore.release()
+          queue.put(Done)

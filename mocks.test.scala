@@ -208,9 +208,11 @@ def makeScrapers(
 
   def makeOxScraper: ScraperAdapter =
     val services = makeSyncServices
+    val (tracing, stop) = Tracing.sync("ox-debug")
     val scraper = OxScraper(
       fetch = services,
       store = services,
+      tracing = tracing,
       root = uri"http://localhost:8080/",
       selector = None,
       maxDepth = scrapeMaxDepth,
@@ -222,7 +224,9 @@ def makeScrapers(
       def maxParallelism: Int = services.maxParallelism
       def visited: Vector[String] = services.visited
       def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit = scraper.start()
+      def run: Unit =
+        try scraper.start()
+        finally stop()
 
   def makeOxScraperHighLevel: ScraperAdapter =
     val services = makeSyncServices
@@ -243,14 +247,7 @@ def makeScrapers(
 
   def makeKyoScraper: ScraperAdapter =
     val services = makeKyoServices
-    val scraper = KyoScraper(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    val tracingScope = Tracing.kyo("kyo-debug")
 
     new ScraperAdapter:
       def maxParallelism: Int = services.maxParallelism
@@ -259,7 +256,21 @@ def makeScrapers(
       def run: Unit =
         import kyo.AllowUnsafe.embrace.danger
         import kyo.*
-        KyoApp.Unsafe.runAndBlock(kyo.Duration.Infinity)(scraper.start).getOrThrow
+        KyoApp.Unsafe
+          .runAndBlock(kyo.Duration.Infinity) {
+            Scope.run:
+              tracingScope.map: tracing =>
+                KyoScraper(
+                  fetch = services,
+                  store = services,
+                  tracing = tracing,
+                  root = uri"http://localhost:8080/",
+                  selector = None,
+                  maxDepth = scrapeMaxDepth,
+                  parallelism = scraperParallelism
+                ).start
+          }
+          .getOrThrow
 
   def makeKyoScraperHighLevel: ScraperAdapter =
     val services = makeKyoServices

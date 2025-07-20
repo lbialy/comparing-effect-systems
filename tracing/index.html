@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Effect Systems Trace Viewer</title>
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- D3.js -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <style>
+    .timeline-container {
+      border: 1px solid #dee2e6;
+      border-radius: 0.375rem;
+      margin-top: 20px;
+      background: white;
+    }
+
+    .timeline-container svg {
+      background: white;
+    }
+
+    .span-bar {
+      stroke: white;
+      stroke-width: 1;
+      cursor: pointer;
+    }
+
+    .span-bar:hover {
+      stroke: #333;
+      stroke-width: 2;
+    }
+
+    .span-label {
+      font-family: monospace;
+      font-size: 12px;
+      fill: #333;
+      pointer-events: none;
+    }
+
+    .axis {
+      font-family: monospace;
+      font-size: 11px;
+    }
+
+    .axis-label {
+      font-family: sans-serif;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .stats-card {
+      background: #f8f9fa;
+      border-radius: 0.375rem;
+      padding: 15px;
+      margin-top: 20px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #6c757d;
+    }
+
+    body {
+      background-color: #f8f9fa;
+    }
+
+    .container {
+      background-color: white;
+      border-radius: 0.375rem;
+      box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+      padding: 30px;
+      margin-top: 30px;
+    }
+
+    code {
+      background-color: #f8f9fa;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .timing-value {
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+
+    #detailsContent {
+      min-height: 140px;
+    }
+
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      pointer-events: none;
+      z-index: 1000;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .tooltip.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="row">
+      <div class="col-12">
+        <h1 class="text-primary mb-4">⏱️ Effect Systems Timeline Viewer</h1>
+
+        <div class="row">
+          <div class="col-md-6">
+            <label for="traceSelect" class="form-label">Select Trace File:</label>
+            <select id="traceSelect" class="form-select">
+              <option value="">Loading trace files...</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Actions:</label>
+            <div>
+              <button id="refreshBtn" class="btn btn-outline-secondary">
+                🔄 Refresh Files
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="stats" class="stats-card" style="display: none;">
+          <h5>📊 Trace Statistics</h5>
+          <div id="statsContent"></div>
+        </div>
+
+        <div id="details" class="stats-card">
+          <h5>🔍 Span Details</h5>
+          <div id="detailsContent">Hover over a span to see detailed timing information</div>
+        </div>
+
+        <div id="chartContainer" class="timeline-container">
+          <div class="loading">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3">Select a trace file to visualize timing data</p>
+            <small class="text-muted">Timeline shows concurrent span execution over time</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tooltip element -->
+  <div id="tooltip" class="tooltip"></div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    let currentChart = null;
+
+    // Load available trace files
+    async function loadTraceFiles() {
+      try {
+        const response = await fetch('/list-traces');
+        const files = await response.json();
+
+        const select = document.getElementById('traceSelect');
+        select.innerHTML = '<option value="">Select a trace file...</option>';
+
+        files.forEach(file => {
+          const option = document.createElement('option');
+          option.value = file;
+          option.textContent = file;
+          select.appendChild(option);
+        });
+      } catch (error) {
+        console.error('Failed to load trace files:', error);
+        const select = document.getElementById('traceSelect');
+        select.innerHTML = '<option value="">Error loading files</option>';
+      }
+    }
+
+    // Convert trace data to timeline format
+    function prepareTimelineData(traces) {
+      if (!traces || traces.length === 0) return null;
+
+      const earliestStart = Math.min(...traces.map(t => new Date(t.startTime).getTime()));
+
+      const spans = traces.map(trace => ({
+        id: trace.id,
+        name: trace.name,
+        startTime: new Date(trace.startTime).getTime() - earliestStart,
+        endTime: new Date(trace.endTime).getTime() - earliestStart,
+        duration: new Date(trace.endTime).getTime() - new Date(trace.startTime).getTime(),
+        parentId: trace.parentId,
+        originalTrace: trace
+      }));
+
+      // Sort spans for better visualization (roots first, then by start time)
+      spans.sort((a, b) => {
+        if (!a.parentId && b.parentId) return -1;
+        if (a.parentId && !b.parentId) return 1;
+        return a.startTime - b.startTime;
+      });
+
+      return spans;
+    }
+
+    // Get color for span based on hierarchy level
+    function getSpanColor(span, allSpans) {
+      const colors = [
+        '#3498db', // Blue for root
+        '#e74c3c', // Red for level 1
+        '#2ecc71', // Green for level 2
+        '#f39c12', // Orange for level 3
+        '#9b59b6', // Purple for level 4
+        '#1abc9c', // Teal for level 5
+        '#34495e', // Dark blue for level 6
+        '#e67e22'  // Dark orange for level 7
+      ];
+
+      // Calculate depth
+      let depth = 0;
+      let current = span;
+      while (current.parentId) {
+        depth++;
+        current = allSpans.find(s => s.id === current.parentId);
+        if (!current) break;
+      }
+
+      return colors[depth % colors.length];
+    }
+
+    // Create timeline chart
+    function createTimelineChart(spans, container) {
+      // Calculate the maximum width needed for span names
+      const tempSvg = d3.select('body').append('svg').style('visibility', 'hidden');
+      const tempText = tempSvg.append('text')
+        .attr('class', 'span-label')
+        .style('font-family', 'monospace')
+        .style('font-size', '12px');
+
+      let maxNameWidth = 0;
+      spans.forEach(span => {
+        tempText.text(span.name);
+        const width = tempText.node().getBBox().width;
+        maxNameWidth = Math.max(maxNameWidth, width);
+      });
+
+      tempSvg.remove();
+
+      // Set left margin with padding based on longest name
+      const leftMargin = Math.max(120, maxNameWidth + 30); // 30px padding
+      const margin = { top: 40, right: 40, bottom: 60, left: leftMargin };
+      const width = container.clientWidth - margin.left - margin.right;
+      const height = Math.max(400, spans.length * 30 + 100);
+      const barHeight = 20;
+
+      // Clear container
+      container.innerHTML = '';
+
+      // Create SVG
+      const svg = d3.select(container)
+        .append('svg')
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+
+      // Scales
+      const maxTime = Math.max(...spans.map(s => s.endTime));
+      const xScale = d3.scaleLinear()
+        .domain([0, maxTime])
+        .range([0, width]);
+
+      const yScale = d3.scaleBand()
+        .domain(spans.map((_, i) => i))
+        .range([0, spans.length * 30])
+        .padding(0.1);
+
+      // X axis (time)
+      const xAxis = d3.axisBottom(xScale)
+        .tickFormat(d => `${Math.round(d)}ms`)
+        .ticks(Math.min(10, Math.ceil(maxTime / 1000)));
+
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${spans.length * 30})`)
+        .call(xAxis);
+
+      // X axis label
+      g.append('text')
+        .attr('class', 'axis-label')
+        .attr('transform', `translate(${width / 2}, ${spans.length * 30 + 45})`)
+        .style('text-anchor', 'middle')
+        .text('Time (milliseconds)');
+
+      // Y axis labels (span names)
+      spans.forEach((span, i) => {
+        const y = yScale(i) + yScale.bandwidth() / 2;
+
+        g.append('text')
+          .attr('class', 'span-label')
+          .attr('x', -15) // Increased padding from chart area
+          .attr('y', y)
+          .attr('dy', '0.35em')
+          .style('text-anchor', 'end')
+          .text(span.name);
+      });
+
+      // Tooltip
+      const tooltip = d3.select('#tooltip');
+
+      // Draw span bars
+      const bars = g.selectAll('.span-bar')
+        .data(spans)
+        .enter()
+        .append('rect')
+        .attr('class', 'span-bar')
+        .attr('x', d => xScale(d.startTime))
+        .attr('y', (d, i) => yScale(i))
+        .attr('width', d => xScale(d.endTime) - xScale(d.startTime))
+        .attr('height', yScale.bandwidth())
+        .attr('fill', d => getSpanColor(d, spans))
+        .attr('opacity', 0.8)
+        .on('mouseover', function (event, d) {
+          // Highlight bar
+          d3.select(this).attr('opacity', 1);
+
+          // Show tooltip
+          const durationMs = Math.round(d.duration);
+          const endTimeMs = Math.round(d.endTime);
+          tooltip
+            .classed('visible', true)
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 10) + 'px')
+            .html(`${d.name}: <span style="color: #4fc3f7">${durationMs}ms (finished at ${endTimeMs}ms)</span> `);
+
+          // Update details
+          showSpanDetails(d);
+        })
+        .on('mouseout', function (event, d) {
+          // Reset bar
+          d3.select(this).attr('opacity', 0.8);
+
+          // Hide tooltip
+          tooltip.classed('visible', false);
+        })
+        .on('mousemove', function (event, d) {
+          // Update tooltip position
+          tooltip
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 10) + 'px');
+        });
+
+      // Add span duration labels on bars
+      bars.each(function (d, i) {
+        const barWidth = xScale(d.endTime) - xScale(d.startTime);
+        const durationText = `${Math.round(d.duration)}ms`;
+
+        // Only show label if bar is wide enough
+        if (barWidth > 50) {
+          g.append('text')
+            .attr('x', xScale(d.startTime) + barWidth / 2)
+            .attr('y', yScale(i) + yScale.bandwidth() / 2)
+            .attr('dy', '0.35em')
+            .style('text-anchor', 'middle')
+            .style('font-family', 'monospace')
+            .style('font-size', '10px')
+            .style('fill', 'white')
+            .style('pointer-events', 'none')
+            .text(durationText);
+        }
+      });
+
+      return svg;
+    }
+
+    // Calculate trace statistics
+    function calculateStats(traces) {
+      if (!traces || traces.length === 0) return null;
+
+      const totalDuration = Math.max(
+        ...traces.map(t => new Date(t.endTime).getTime())
+      ) - Math.min(
+        ...traces.map(t => new Date(t.startTime).getTime())
+      );
+
+      const spanCount = traces.length;
+      const rootSpans = traces.filter(t => !t.parentId).length;
+
+      return {
+        totalDuration: totalDuration / 1000, // Convert to seconds
+        spanCount,
+        rootSpans,
+        avgSpanDuration: traces.reduce((sum, t) =>
+          sum + (new Date(t.endTime).getTime() - new Date(t.startTime).getTime()), 0
+        ) / traces.length / 1000
+      };
+    }
+
+    // Display statistics
+    function displayStats(stats) {
+      const statsDiv = document.getElementById('stats');
+      const contentDiv = document.getElementById('statsContent');
+
+      if (!stats) {
+        statsDiv.style.display = 'none';
+        return;
+      }
+
+      contentDiv.innerHTML = `
+        <div class="row">
+          <div class="col-md-3">
+            <strong>Total Duration:</strong><br>
+            ${stats.totalDuration.toFixed(3)}s
+          </div>
+          <div class="col-md-3">
+            <strong>Total Spans:</strong><br>
+            ${stats.spanCount}
+          </div>
+          <div class="col-md-3">
+            <strong>Root Spans:</strong><br>
+            ${stats.rootSpans}
+          </div>
+          <div class="col-md-3">
+            <strong>Avg Span Duration:</strong><br>
+            ${stats.avgSpanDuration.toFixed(3)}s
+          </div>
+        </div>
+      `;
+
+      statsDiv.style.display = 'block';
+    }
+
+    // Load and visualize trace
+    async function loadTrace(filename) {
+      if (!filename) return;
+
+      const container = document.getElementById('chartContainer');
+      container.innerHTML = '<div class="loading"><div class="spinner-border text-primary" role="status"></div><p class="mt-3">Loading trace data...</p></div>';
+
+      try {
+        const response = await fetch(`/traces/${filename}`);
+        const traces = await response.json();
+
+        // Calculate and display stats
+        const stats = calculateStats(traces);
+        displayStats(stats);
+
+        // Initialize details panel
+        showSpanDetails(null);
+
+        // Prepare timeline data
+        const spans = prepareTimelineData(traces);
+
+        if (!spans || spans.length === 0) {
+          container.innerHTML = '<div class="loading"><p>No trace data found</p></div>';
+          return;
+        }
+
+        // Create timeline chart
+        currentChart = createTimelineChart(spans, container);
+
+      } catch (error) {
+        console.error('Failed to load trace:', error);
+        container.innerHTML = '<div class="loading"><p class="text-danger">Failed to load trace data</p></div>';
+      }
+    }
+
+    // Show detailed span information
+    function showSpanDetails(span) {
+      const contentDiv = document.getElementById('detailsContent');
+
+      if (!span) {
+        contentDiv.innerHTML = `
+          <div class="text-muted" style="padding: 40px; text-align: center;">
+            Hover over a span to see detailed timing information
+          </div>
+        `;
+        return;
+      }
+
+      const durationMs = Math.round(span.duration);
+      const startTimeMs = Math.round(span.startTime);
+
+      const spanId = span.id.substring(0, 8) + '...';
+      const parentId = span.parentId ? span.parentId.substring(0, 8) + '...' : 'Root';
+
+      contentDiv.innerHTML = `
+        <div class="row">
+          <div class="col-md-6">
+            <strong>Span Name:</strong><br>
+            <code>${span.name}</code>
+          </div>
+          <div class="col-md-6">
+            <strong>Span ID:</strong><br>
+            <code>${spanId}</code>
+          </div>
+        </div>
+        <div class="row mt-3">
+          <div class="col-md-4">
+            <strong>Duration:</strong><br>
+            <span class="text-primary timing-value">${durationMs} ms</span>
+          </div>
+          <div class="col-md-4">
+            <strong>Start Time:</strong><br>
+            <span class="text-info timing-value">${startTimeMs} ms</span>
+          </div>
+          <div class="col-md-4">
+            <strong>End Time:</strong><br>
+            <span class="text-warning timing-value">${Math.round(span.endTime)} ms</span>
+          </div>
+        </div>
+        <div class="row mt-3">
+          <div class="col-md-6">
+            <strong>Parent ID:</strong><br>
+            <code>${parentId}</code>
+          </div>
+          <div class="col-md-6">
+            <strong>Execution Type:</strong><br>
+            <span class="timing-value">${span.parentId ? 'Child Span' : 'Root Span'}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Event listeners
+    document.getElementById('traceSelect').addEventListener('change', (e) => {
+      loadTrace(e.target.value);
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      loadTraceFiles();
+    });
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+      const selectedFile = document.getElementById('traceSelect').value;
+      if (selectedFile && currentChart) {
+        // Reload the chart with new dimensions
+        loadTrace(selectedFile);
+      }
+    });
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadTraceFiles();
+    });
+  </script>
+</body>
+
+</html>

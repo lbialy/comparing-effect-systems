@@ -36,6 +36,7 @@
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core:2.36.7
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros:2.36.7
 
-//> using test.dep org.scalameta::munit:1.1.1
 //> using test.dep com.softwaremill.sttp.tapir::tapir-files:1.11.37
 //> using test.dep com.softwaremill.sttp.tapir::tapir-jdkhttp-server:1.11.37
+
+//> using test.dep org.scalameta::munit:1.1.1

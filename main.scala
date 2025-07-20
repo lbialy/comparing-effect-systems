@@ -90,9 +90,15 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
 
       val fetch = Fetch.kyo
       val store = Store.kyo(outputDir)
-      val scraper = KyoScraper(fetch, store, rootUri, selector, maxDepth = 20)
+      val tracingScope = Tracing.kyo("kyo-debug")
 
-      KyoApp.Unsafe.runAndBlock(Duration.Infinity)(scraper.start).getOrThrow
+      KyoApp.Unsafe
+        .runAndBlock(Duration.Infinity) {
+          Scope.run:
+            tracingScope.map: tracing =>
+              KyoScraper(fetch, store, tracing, rootUri, selector, maxDepth = 20).start
+        }
+        .getOrThrow
 
     case "kyo-high" =>
       import kyo.AllowUnsafe.embrace.danger
@@ -107,9 +113,11 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
     case "ox" =>
       val fetch = Fetch.sync
       val store = Store.sync(outputDir)
-      val scraper = OxScraper(fetch, store, rootUri, selector, maxDepth = 20)
+      val (tracing, stop) = Tracing.sync("ox-debug")
+      val scraper = OxScraper(fetch, store, tracing, rootUri, selector, maxDepth = 20)
 
-      scraper.start()
+      try scraper.start()
+      finally stop()
 
     case "ox-high" =>
       val fetch = Fetch.sync

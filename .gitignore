@@ -1,5 +1,6 @@
 .bsp
 .metals
+.cursor
 .scala-build
 .vscode
 tapir.softwaremill.com*
