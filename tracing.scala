@@ -137,7 +137,7 @@ object Tracing:
           start <- KyoClock.now
           _ <- KyoScope.ensure(
             KyoClock.now.map { end =>
-          spans.add(SpanData(rootTrace.id, None, n, None, start.toJava, end.toJava))
+              spans.add(SpanData(rootTrace.id, None, n, None, start.toJava, end.toJava))
             }
           )
           res <- body(using rootTrace)
