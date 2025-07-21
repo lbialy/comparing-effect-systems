@@ -106,9 +106,15 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
 
       val fetch = Fetch.kyo
       val store = Store.kyo(outputDir)
-      val scraper = KyoScraperHighLevel(fetch, store, rootUri, selector, maxDepth = 20)
+      val tracingScope = Tracing.kyo("kyo-high-debug")
 
-      KyoApp.Unsafe.runAndBlock(Duration.Infinity)(scraper.start).getOrThrow
+      KyoApp.Unsafe
+        .runAndBlock(Duration.Infinity) {
+          Scope.run:
+            tracingScope.map: tracing =>
+              KyoScraperHighLevel(fetch, store, tracing, rootUri, selector, maxDepth = 20).start
+        }
+        .getOrThrow
 
     case "ox" =>
       val fetch = Fetch.sync

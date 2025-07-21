@@ -109,7 +109,7 @@ object Tracing:
       yield res
 
   class KyoTracing(spans: ConcurrentLinkedQueue[SpanData]) extends TracingKyo:
-    def span1[A, S](n: String)(body: Trace ?=> A < S)(using p: Trace): A < (Async & S) =
+    def span[A, S](n: String)(body: Trace ?=> A < S)(using p: Trace): A < (Async & S) =
       val childTrace = Trace(p.uri)
       KyoScope.run:
         for
@@ -120,7 +120,7 @@ object Tracing:
           res <- body(using childTrace)
         yield res
 
-    def span[A, S](n: String)(body: Trace ?=> A < S)(using p: Trace): A < (Async & S) =
+    def spanNoScope[A, S](n: String)(body: Trace ?=> A < S)(using p: Trace): A < (Async & S) =
       val childTrace = Trace(p.uri)
       for
         start <- KyoClock.now
@@ -130,7 +130,7 @@ object Tracing:
         }
       yield res
 
-    def root1[A, S](n: String)(body: Trace ?=> A < S): A < (Async & S) =
+    def root[A, S](n: String)(body: Trace ?=> A < S): A < (Async & S) =
       val rootTrace = Trace(None)
       KyoScope.run:
         for
@@ -143,7 +143,7 @@ object Tracing:
           res <- body(using rootTrace)
         yield res
 
-    def root[A, S](n: String)(body: Trace ?=> A < S): A < (Async & S) =
+    def rootNoScope[A, S](n: String)(body: Trace ?=> A < S): A < (Async & S) =
       val rootTrace = Trace(None)
       for
         start <- KyoClock.now
