@@ -274,14 +274,7 @@ def makeScrapers(
 
   def makeKyoScraperHighLevel: ScraperAdapter =
     val services = makeKyoServices
-    val scraper = KyoScraperHighLevel(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    val tracingScope = Tracing.kyo("kyo-high-debug")
 
     new ScraperAdapter:
       def maxParallelism: Int = services.maxParallelism
@@ -290,7 +283,21 @@ def makeScrapers(
       def run: Unit =
         import kyo.AllowUnsafe.embrace.danger
         import kyo.*
-        KyoApp.Unsafe.runAndBlock(kyo.Duration.Infinity)(scraper.start).getOrThrow
+        KyoApp.Unsafe
+          .runAndBlock(kyo.Duration.Infinity) {
+            Scope.run:
+              tracingScope.map: tracing =>
+                KyoScraperHighLevel(
+                  fetch = services,
+                  store = services,
+                  tracing = tracing,
+                  root = uri"http://localhost:8080/",
+                  selector = None,
+                  maxDepth = scrapeMaxDepth,
+                  parallelism = scraperParallelism
+                ).start
+        }
+        .getOrThrow
 
   def makeGearsScraper: ScraperAdapter =
     val services = makeSyncServices
