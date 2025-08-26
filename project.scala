@@ -1,4 +1,5 @@
-//> using scala 3.7.1
+//> using scala "3.8.0-RC1-bin-20250819-1f13619-NIGHTLY"
+//> using repository https://repo.scala-lang.org/artifactory/maven-nightlies/
 
 // scala 3 compiler options
 
@@ -6,6 +7,9 @@
 ///> using option "-Wnonunit-statement"
 ///> using option "-Wconf:msg=(unused.*value|discarded.*value|pure.*statement):error"
 ///> using option "-language:strictEquality"
+
+///> using option -language:experimental.captureChecking
+///> using option -Xprint:cc
 
 //> using option -Wunused:all
 //> using option -deprecation
@@ -18,16 +22,17 @@
 
 // effect / direct-style dependencies
 
-//> using dep org.typelevel::cats-effect:3.6.2
+//> using dep org.typelevel::cats-effect:3.6.3
 
-//> using dep dev.zio::zio:2.1.19
+//> using dep dev.zio::zio:2.1.20
 
-//> using dep com.softwaremill.ox::core:0.7.3
+//> using dep com.softwaremill.ox::core:1.0.0
 
 //> using dep io.getkyo::kyo-core:1.0-RC1
 //> using dep io.getkyo::kyo-combinators:1.0-RC1
 
-//> using dep ch.epfl.lamp::gears:0.2.0
+//> using dep ch.epfl.lamp::gears:0.0.0+317-f49657d8-SNAPSHOT
+//> using dep ch.epfl.lamp::steps:0.1.0-RC1+2-aac846d4-SNAPSHOT
 
 // tracing and testing dependencies
 

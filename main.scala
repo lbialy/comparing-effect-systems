@@ -90,13 +90,12 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
 
       val fetch = Fetch.kyo
       val store = Store.kyo(outputDir)
-      val tracingScope = Tracing.kyo("kyo-debug")
+      // val tracingScope = Tracing.kyo("kyo-debug")
 
       KyoApp.Unsafe
         .runAndBlock(Duration.Infinity) {
-          Scope.run:
-            tracingScope.map: tracing =>
-              KyoScraper(fetch, store, tracing, rootUri, selector, maxDepth = 20).start
+          // tracingScope.map: tracing =>
+          KyoScraper(fetch, store, /*tracing, */ rootUri, selector, maxDepth = 20, queueCapacity = 1000).start
         }
         .getOrThrow
 
@@ -111,8 +110,8 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
       KyoApp.Unsafe.runAndBlock(Duration.Infinity)(scraper.start).getOrThrow
 
     case "ox" =>
-      val fetch = Fetch.sync
-      val store = Store.sync(outputDir)
+      val fetch = Fetch.either
+      val store = Store.either(outputDir)
       val (tracing, stop) = Tracing.sync("ox-debug")
       val scraper = OxScraper(fetch, store, tracing, rootUri, selector, maxDepth = 20)
 
@@ -120,22 +119,22 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
       finally stop()
 
     case "ox-high" =>
-      val fetch = Fetch.sync
-      val store = Store.sync(outputDir)
+      val fetch = Fetch.either
+      val store = Store.either(outputDir)
       val scraper = OxScraperHighLevel(fetch, store, rootUri, selector, maxDepth = 20)
 
       scraper.start()
 
     case "gears" =>
-      val fetch = Fetch.sync
-      val store = Store.sync(outputDir)
+      val fetch = Fetch.result
+      val store = Store.result(outputDir)
       val scraper = GearsScraper(fetch, store, rootUri, selector, maxDepth = 20)
 
       scraper.start()
 
     case "gears-high" =>
-      val fetch = Fetch.sync
-      val store = Store.sync(outputDir)
+      val fetch = Fetch.result
+      val store = Store.result(outputDir)
       val scraper = GearsScraperHighLevel(fetch, store, rootUri, selector, maxDepth = 20)
 
       scraper.start()

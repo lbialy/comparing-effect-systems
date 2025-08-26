@@ -6,8 +6,8 @@ import ox.*, either.*
 import scala.annotation.tailrec
 
 class OxScraper(
-    fetch: Fetch[Result],
-    store: Store[Result],
+    fetch: Fetch[EitherErrorOr],
+    store: Store[EitherErrorOr],
     tracing: Tracing[Id],
     root: Uri,
     selector: Option[String],
@@ -42,7 +42,7 @@ class OxScraper(
         case Done =>
           coordinator(visited, inFlight - 1)
 
-  private def crawl(uri: Uri, depth: Int)(using Trace): Result[Unit] =
+  private def crawl(uri: Uri, depth: Int)(using Trace): Either[Throwable, Unit] =
     tracing.span(s"crawl(${uri.pathToString})"):
       either:
         semaphore.acquire()

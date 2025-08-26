@@ -13,7 +13,7 @@ class ZIOScraperHighLevel(
 ):
   def start: Task[Unit] =
     for
-      queue <- Queue.unbounded[Scrape | Done]
+      queue <- Queue.unbounded[Scrape]
       visitedRef <- Ref.make(Set.empty[Uri])
       inFlight <- Ref.make(0)
       _ <- inFlight.update(_ + 1)
@@ -21,10 +21,9 @@ class ZIOScraperHighLevel(
       _ <- ZIO.collectAllParDiscard(Vector.fill(parallelism)(worker(queue, visitedRef, inFlight)))
     yield ()
 
-  private def worker(queue: Queue[Scrape | Done], visitedRef: Ref[Set[Uri]], inFlight: Ref[Int]): Task[Unit] =
-    queue.take.flatMap {
-      case Done => ZIO.unit
-      case Scrape(uri, depth) =>
+  private def worker(queue: Queue[Scrape], visitedRef: Ref[Set[Uri]], inFlight: Ref[Int]): Task[Unit] =
+    queue.take
+      .flatMap { case Scrape(uri, depth) =>
         val handleUri =
           if depth >= maxDepth then ZIO.unit
           else
@@ -35,11 +34,12 @@ class ZIOScraperHighLevel(
 
         handleUri *> inFlight.updateAndGet(_ - 1).flatMap { currentInFlight =>
           if currentInFlight > 0 then worker(queue, visitedRef, inFlight)
-          else queue.offerAll(Vector.fill(parallelism)(Done)).unit
+          else queue.shutdown
         }
-    }
+      }
+      .catchAllCause(cause => if cause.isInterruptedOnly then Exit.unit else Exit.failCause(cause))
 
-  private def crawl(uri: Uri, depth: Int, queue: Queue[Scrape | Done], inFlight: Ref[Int]): Task[Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue[Scrape], inFlight: Ref[Int]): Task[Unit] =
     for
       content <- fetch.fetch(uri)
       (links, markdown) <- ZIO.fromEither(MdConverter.convertAndExtractLinks(content, uri, selector))

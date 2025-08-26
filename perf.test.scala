@@ -7,7 +7,6 @@ import sttp.tapir.server.jdkhttp.JdkHttpServer
 import com.sun.net.httpserver.HttpServer
 import java.util.concurrent.Executors
 import java.net.InetSocketAddress
-import scala.util.{Try, Success, Failure}
 import java.time.{Instant, Duration => JDuration}
 import scala.concurrent.duration.Duration
 
@@ -59,10 +58,10 @@ class PerfSuite extends FunSuite:
     "cats-high-tf",
     "zio",
     "zio-high",
-    "kyo",
-    "kyo-high",
     "ox",
     "ox-high",
+    "kyo",
+    "kyo-high",
     "gears",
     "gears-high"
   )
@@ -77,6 +76,12 @@ class PerfSuite extends FunSuite:
     val duration = JDuration.between(start, end).toMillis.toDouble
     (result, duration)
 
+  def warmUpTheServer(rootUrl: String): Unit = // use sttp.quick to warm up the server
+    import sttp.client4.quick.*
+    1 to 10 foreach { _ =>
+      quickRequest.get(uri"$rootUrl").send()
+    }
+
   def runVariantBench(variant: String, rootUrl: String): List[Double] =
     println(s"Cleaning up the scrape result directory: ${address.getHostString}")
     os.remove.all(os.pwd / address.getHostString)
@@ -88,27 +93,25 @@ class PerfSuite extends FunSuite:
     println(s"\n🚀 Starting benchmark for variant: $variant")
     println(s"📊 Running $iterations iterations...")
 
+    warmUpTheServer(rootUrl)
+
     for i <- 1 to iterations do
-      Try {
+      try
         val (_, timing) = measureTime {
           run(variant, rootUrl, selector)
         }
-        timing
-      } match {
-        case Success(timing) =>
-          val count = os.walk(os.pwd / address.getHostString).size
-          if count != OxDocsCount then
-            println(s"❌ $variant: $count files in the result directory, expected $OxDocsCount")
-            failCount += 1
-          else
-            timings += timing
-            successCount += 1
-
-        case Failure(exception) =>
-          println(s"❌ Failed run $i for $variant: ${exception}")
-          exception.printStackTrace()
+        val count = os.walk(os.pwd / address.getHostString).size
+        if count != OxDocsCount then
+          println(s"❌ $variant: $count files in the result directory, expected $OxDocsCount")
           failCount += 1
-      }
+        else
+          timings += timing
+          successCount += 1
+      catch
+        case t: Throwable =>
+          println(s"❌ Failed run $i for $variant: ${t}")
+          t.printStackTrace()
+          failCount += 1
 
       os.remove.all(os.pwd / address.getHostString)
 

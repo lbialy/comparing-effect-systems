@@ -6,8 +6,8 @@ import ox.*, either.*, channels.*
 import scala.annotation.tailrec
 
 class OxScraperHighLevel(
-    fetch: Fetch[Result],
-    store: Store[Result],
+    fetch: Fetch[EitherErrorOr],
+    store: Store[EitherErrorOr],
     root: Uri,
     selector: Option[String],
     maxDepth: Int,
@@ -39,7 +39,7 @@ class OxScraperHighLevel(
       case ChannelClosed.Done     => ()
       case ChannelClosed.Error(e) => throw e
 
-  private def crawl(uri: Uri, depth: Int): Result[Unit] = either:
+  private def crawl(uri: Uri, depth: Int): Either[Throwable, Unit] = either:
     val content = fetch.fetch(uri).ok()
     val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector).ok()
     val key = Names.toFilename(uri, root)

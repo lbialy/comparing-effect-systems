@@ -1,15 +1,17 @@
 package ma.chinespirit.crawldown
 
+import scala.language.experimental.captureChecking
+
 import java.util.concurrent.{ArrayBlockingQueue, Semaphore}
 import sttp.model.Uri
-import gears.async.*
+import gears.async.{Future => _, *}
 import gears.async.default.given
+import steps.result.*, Result.eval.*
 import scala.annotation.tailrec
-import scala.util.boundary, boundary.break
 
 class GearsScraper(
-    fetch: Fetch[Result],
-    store: Store[Result],
+    fetch: Fetch[ResultEx],
+    store: Store[ResultEx],
     root: Uri,
     selector: Option[String],
     maxDepth: Int,
@@ -36,37 +38,29 @@ class GearsScraper(
           else if !visited.contains(uri) then
             Future:
               crawl(uri, depth) match
-                case Left(ex) => queue.put(ex)
-                case Right(_) => ()
+                case Result.Err(ex) => queue.put(ex)
+                case Result.Ok(_)   => ()
 
             coordinator(visited + uri, inFlight + 1)
           else coordinator(visited, inFlight)
         case Done =>
           coordinator(visited, inFlight - 1)
 
-  private def crawl(uri: Uri, depth: Int)(using async: Async): Result[Unit] =
+  private def crawl(uri: Uri, depth: Int)(using Async.Spawn): ResultEx[Unit] =
     JvmAsyncOperations.jvmInterruptible:
-      boundary[Result[Unit]]:
+      Result[Unit, Throwable]:
         semaphore.acquire()
         try
-          val content = fetch.fetch(uri) match
-            case Left(e)        => break(Left(e))
-            case Right(content) => content
-
-          val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector) match
-            case Left(e)                  => break(Left(e))
-            case Right((links, markdown)) => (links, markdown)
+          val content = fetch.fetch(uri).ok
+          val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector).toResult.ok
 
           val key = Names.toFilename(uri, root)
           def pushFrontier = links.map(Scrape(_, depth + 1)).foreach(queue.put)
-          def persist = store.store(key, markdown) match
-            case Left(e)  => break(Left(e))
-            case Right(_) => ()
+          def persist = store.store(key, markdown)
 
           Async.group:
-            Future(pushFrontier).zip(Future(persist)).await
-
-          Right(())
+            val (_, persistResult) = Future(pushFrontier).zip(Future(persist)).await
+            persistResult.ok
         finally
           semaphore.release()
           queue.put(Done)

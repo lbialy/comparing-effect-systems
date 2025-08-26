@@ -207,7 +207,7 @@ def makeScrapers(
         }
 
   def makeOxScraper: ScraperAdapter =
-    val services = makeSyncServices
+    val services = makeEitherServices
     val (tracing, stop) = Tracing.sync("ox-debug")
     val scraper = OxScraper(
       fetch = services,
@@ -229,7 +229,7 @@ def makeScrapers(
         finally stop()
 
   def makeOxScraperHighLevel: ScraperAdapter =
-    val services = makeSyncServices
+    val services = makeEitherServices
     val scraper = OxScraperHighLevel(
       fetch = services,
       store = services,
@@ -247,7 +247,7 @@ def makeScrapers(
 
   def makeKyoScraper: ScraperAdapter =
     val services = makeKyoServices
-    val tracingScope = Tracing.kyo("kyo-debug")
+    // val tracingScope = Tracing.kyo("kyo-debug")
 
     new ScraperAdapter:
       def maxParallelism: Int = services.maxParallelism
@@ -259,16 +259,16 @@ def makeScrapers(
         KyoApp.Unsafe
           .runAndBlock(kyo.Duration.Infinity) {
             Scope.run:
-              tracingScope.map: tracing =>
-                KyoScraper(
-                  fetch = services,
-                  store = services,
-                  tracing = tracing,
-                  root = uri"http://localhost:8080/",
-                  selector = None,
-                  maxDepth = scrapeMaxDepth,
-                  parallelism = scraperParallelism
-                ).start
+              // tracingScope.map: tracing =>
+              KyoScraper(
+                fetch = services,
+                store = services,
+                // tracing = tracing,
+                root = uri"http://localhost:8080/",
+                selector = None,
+                maxDepth = scrapeMaxDepth,
+                parallelism = scraperParallelism
+              ).start
           }
           .getOrThrow
 
@@ -293,7 +293,7 @@ def makeScrapers(
         KyoApp.Unsafe.runAndBlock(kyo.Duration.Infinity)(scraper.start).getOrThrow
 
   def makeGearsScraper: ScraperAdapter =
-    val services = makeSyncServices
+    val services = makeResultServices
     val scraper = GearsScraper(
       fetch = services,
       store = services,
@@ -310,7 +310,7 @@ def makeScrapers(
       def run: Unit = scraper.start()
 
   def makeGearsScraperHighLevel: ScraperAdapter =
-    val services = makeSyncServices
+    val services = makeResultServices
     val scraper = GearsScraperHighLevel(
       fetch = services,
       store = services,
@@ -362,7 +362,36 @@ def makeScrapers(
 
       def maxParallelism: Int = maxSeen.get()
 
-  def makeSyncServices: Fetch[Result] & Store[Result] & MockMetadata =
+  def makeEitherServices: Fetch[EitherErrorOr] & Store[EitherErrorOr] & MockMetadata =
+    new Fetch[EitherErrorOr] with Store[EitherErrorOr] with MockMetadata:
+      val visitedUris = AtomicReference(Vector.empty[String])
+      val maxSeen = AtomicInteger(0)
+      val currentPending = AtomicInteger(0)
+
+      def fetch(uri: Uri): EitherErrorOr[String] =
+        val path = normalisePath(uri)
+        routes.get(path) match
+          case Some(PageSpec(links, delay, error)) =>
+            currentPending.incrementAndGet()
+            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+            delay.foreach {
+              case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
+              case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
+            }
+            visitedUris.getAndUpdate(v => v :+ path)
+            currentPending.decrementAndGet()
+            error.fold(Right(Templating.page(links)))(Left(_))
+
+          case None => Left(Exception(s"Page not found: $uri"))
+
+      def store(key: String, value: String): EitherErrorOr[Unit] =
+        Right(())
+
+      def visited: Vector[String] = visitedUris.get()
+
+      def maxParallelism: Int = maxSeen.get()
+
+  def makeResultServices: Fetch[Result] & Store[Result] & MockMetadata =
     new Fetch[Result] with Store[Result] with MockMetadata:
       val visitedUris = AtomicReference(Vector.empty[String])
       val maxSeen = AtomicInteger(0)
@@ -380,12 +409,12 @@ def makeScrapers(
             }
             visitedUris.getAndUpdate(v => v :+ path)
             currentPending.decrementAndGet()
-            error.fold(Right(Templating.page(links)))(Left(_))
+            error.fold(Result.Ok(Templating.page(links)))(Result.Err(_))
 
-          case None => Left(Exception(s"Page not found: $uri"))
+          case None => Result.Err(Exception(s"Page not found: $uri"))
 
       def store(key: String, value: String): Result[Unit] =
-        Right(())
+        Result.Ok(())
 
       def visited: Vector[String] = visitedUris.get()
 

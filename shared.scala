@@ -3,19 +3,30 @@ package ma.chinespirit.crawldown
 import cats.effect.IO
 import cats.effect.Sync
 import cats.syntax.all.*
-import kyo.{Async as KyoAsync, Sync as KyoSync, *}
+import kyo.{Async as KyoAsync, Sync as KyoSync, Result as _, *}
 import sttp.client4.quick.*
 import sttp.model.Uri
 import zio.Task as ZTask
 import zio.ZIO
+import steps.result.*
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.blocking
 
-type Result[+A] = Either[Throwable, A]
+given Conversion[Throwable, Throwable] = t => t
 
-type Kyo[+A] = A < (KyoAsync & KyoSync & Abort[Throwable])
+extension [E, A](either: Either[E, A])
+  def toResult: Result[A, E] =
+    either match
+      case Left(err)    => Result.Err(err)
+      case Right(value) => Result.Ok(value)
+
+type ResultEx[+A] = Result[A, Throwable]
+
+type EitherErrorOr[+A] = Either[Throwable, A]
+
+type Kyo[+A] = A < (KyoAsync & Abort[Throwable])
 
 case class Scrape(uri: Uri, depth: Int)
 sealed trait Done
@@ -72,13 +83,20 @@ object Fetch:
           case Right(body) => KyoSync.defer(body)
       }
 
-  def sync: Fetch[Result] = new Fetch[Result]:
-    def fetch(uri: Uri): Result[String] =
+  def either: Fetch[EitherErrorOr] = new Fetch[EitherErrorOr]:
+    def fetch(uri: Uri): EitherErrorOr[String] =
       val response = basicRequest.get(uri).send()
       response.body match
         case Left(error) =>
           Left(Exception(s"Failed to fetch $uri: $error"))
         case Right(body) => Right(body)
+
+  def result: Fetch[ResultEx] = new Fetch[ResultEx]:
+    def fetch(uri: Uri): ResultEx[String] =
+      val response = basicRequest.get(uri).send()
+      response.body match
+        case Left(error) => Result.Err(Exception(s"Failed to fetch $uri: $error"))
+        case Right(body) => Result.Ok(body)
 
 trait Store[F[_]]:
   def store(key: String, value: String): F[Unit]
@@ -121,13 +139,21 @@ object Store:
       def store(key: String, value: String): Kyo[Unit] =
         KyoSync.defer(Abort.catching(os.write(dir / key, value)))
 
-  def sync(dir: os.Path): Store[Result] =
+  def either(dir: os.Path): Store[EitherErrorOr] =
     os.makeDir.all(dir)
 
-    new Store[Result]:
-      def store(key: String, value: String): Result[Unit] =
+    new Store[EitherErrorOr]:
+      def store(key: String, value: String): EitherErrorOr[Unit] =
         os.write(dir / key, value)
         Right(())
+
+  def result(dir: os.Path): Store[ResultEx] =
+    os.makeDir.all(dir)
+
+    new Store[ResultEx]:
+      def store(key: String, value: String): ResultEx[Unit] =
+        os.write(dir / key, value)
+        Result.Ok(())
 
 object Names:
   def toDirname(uri: Uri): String =
