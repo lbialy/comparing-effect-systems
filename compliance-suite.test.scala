@@ -19,6 +19,7 @@ import scala.collection.immutable.SortedSet
 // - 5. X crawler is interrupted when error occurs and errors from worker propagate to top level
 // - 6. X max depth is respected
 class ComplianceSuite extends FunSuite:
+  import Scrapers.makeScrapers
   given ExecutionContext = ExecutionContext.global
 
   val parallelismRoutes =

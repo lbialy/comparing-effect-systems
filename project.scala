@@ -31,17 +31,6 @@
 //> using dep ch.epfl.lamp::gears:0.2.0
 //> using dep ch.epfl.lamp::steps:0.2.0
 
-// if you want to play with capchecked gears and steps (provides Result datatype), you need to:
-//   * clone natsukagami/async
-//   * checkout add-cc branch (f49657d8c78bef4b2689837b4415947aac752a91)
-//   * publish the project locally with `sbt publishLocal`
-//   * comment out contents of result-with-cc.scala
-//   * uncomment the following dependencies in this project
-//   * fix Result types in shared.scala and gears-*.scala
-
-///> using dep ch.epfl.lamp::gears:0.0.0+317-f49657d8-SNAPSHOT
-///> using dep ch.epfl.lamp::steps:0.1.0-RC1+2-aac846d4-SNAPSHOT
-
 // tracing and testing dependencies
 
 //> using dep ch.qos.logback:logback-classic:1.5.32

@@ -5,7 +5,7 @@ import cats.effect.IO
 import cats.effect.Sync
 import cats.syntax.all.*
 import kyo.{Async as _, Result as _, Sync as KyoSync, *}
-// import steps.result.*
+import steps.result.*
 import sttp.model.Uri
 import zio.Task as ZTask
 import zio.ZIO
@@ -18,8 +18,6 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
 import Uri.*
-
-// type ResultEx[+A] = Result[A, Throwable]
 
 object Templating:
   def page(links: Set[String]): String =
@@ -49,302 +47,333 @@ trait ScraperAdapter:
   def hasDuplicates: Boolean
   def run: Unit
 
-def makeScrapers(
-    routes: Map[String, PageSpec],
-    scraperParallelism: Int,
-    scraperQueueCapacity: Int,
-    scrapeMaxDepth: Int,
-    futureEC: ExecutionContext
-): Map[String, ScraperAdapter] =
-  def makeFutureScraper: ScraperAdapter =
-    val services = makeFutureServices(using futureEC)
-    val scraper = FutureScraper(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism,
-      queueCapacity = scraperQueueCapacity
-    )(using futureEC)
+object Scrapers:
+  def makeScrapers(
+      routes: Map[String, PageSpec],
+      scraperParallelism: Int,
+      scraperQueueCapacity: Int,
+      scrapeMaxDepth: Int,
+      futureEC: ExecutionContext
+  ): Map[String, ScraperAdapter] =
+    def makeFutureScraper: ScraperAdapter =
+      val services = makeFutureServices(using futureEC)
+      val scraper = FutureScraper(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism,
+        queueCapacity = scraperQueueCapacity
+      )(using futureEC)
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit = scraper.start()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start()
 
-  def makeFutureScraperHighLevel: ScraperAdapter =
-    val services = makeFutureServices(using futureEC)
-    val scraper = FutureScraperHighLevel(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )(using futureEC)
+    def makeFutureScraperHighLevel: ScraperAdapter =
+      val services = makeFutureServices(using futureEC)
+      val scraper = FutureScraperHighLevel(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )(using futureEC)
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit = scraper.start()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start()
 
-  def makeCatsScraperHighLevel: ScraperAdapter =
-    val services = makeCatsServices
-    val scraper = CatsScraperHighLevel(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    def makeCatsScraperHighLevel: ScraperAdapter =
+      val services = makeCatsServices
+      val scraper = CatsScraperHighLevel(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        import cats.effect.unsafe.implicits.global
-        scraper.start.unsafeRunSync()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          import cats.effect.unsafe.implicits.global
+          scraper.start.unsafeRunSync()
 
-  def makeCatsScraper: ScraperAdapter =
-    val services = makeCatsServices
-    val scraper = CatsScraper(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism,
-      queueCapacity = scraperQueueCapacity
-    )
+    def makeCatsScraper: ScraperAdapter =
+      val services = makeCatsServices
+      val scraper = CatsScraper(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism,
+        queueCapacity = scraperQueueCapacity
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        import cats.effect.unsafe.implicits.global
-        scraper.start.unsafeRunSync()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          import cats.effect.unsafe.implicits.global
+          scraper.start.unsafeRunSync()
 
-  def makeCatsScraperTF: ScraperAdapter =
-    val services = makeCatsServicesTF[IO]
-    val scraper = CatsScraperTF(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism,
-      queueCapacity = scraperQueueCapacity
-    )
+    def makeCatsScraperTF: ScraperAdapter =
+      val services = makeCatsServicesTF[IO]
+      val scraper = CatsScraperTF(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism,
+        queueCapacity = scraperQueueCapacity
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        import cats.effect.unsafe.implicits.global
-        scraper.start.unsafeRunSync()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          import cats.effect.unsafe.implicits.global
+          scraper.start.unsafeRunSync()
 
-  def makeCatsScraperHighTF: ScraperAdapter =
-    val services = makeCatsServicesTF[IO]
-    val scraper = CatsScraperHighLevelTF(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    def makeCatsScraperHighTF: ScraperAdapter =
+      val services = makeCatsServicesTF[IO]
+      val scraper = CatsScraperHighLevelTF(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        import cats.effect.unsafe.implicits.global
-        scraper.start.unsafeRunSync()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          import cats.effect.unsafe.implicits.global
+          scraper.start.unsafeRunSync()
 
-  def makeZioScraperHighLevel: ScraperAdapter =
-    val services = makeZioServices
-    val scraper = ZIOScraperHighLevel(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    def makeZioScraperHighLevel: ScraperAdapter =
+      val services = makeZioServices
+      val scraper = ZIOScraperHighLevel(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        zio.Unsafe.unsafely {
-          zio.Runtime.default.unsafe.run(scraper.start).getOrThrow()
-        }
-
-  def makeZioScraper: ScraperAdapter =
-    val services = makeZioServices
-    val scraper = ZIOScraper(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
-
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        zio.Unsafe.unsafely {
-          zio.Runtime.default.unsafe.run(scraper.start).getOrThrow()
-        }
-
-  def makeOxScraper: ScraperAdapter =
-    val services = makeEitherServices
-    val (tracing, stop) = Tracing.sync("ox-debug")
-    val scraper = OxScraper(
-      fetch = services,
-      store = services,
-      tracing = tracing,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism,
-      queueCapacity = scraperQueueCapacity
-    )
-
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        try scraper.start()
-        finally stop()
-
-  def makeOxScraperHighLevel: ScraperAdapter =
-    val services = makeEitherServices
-    val scraper = OxScraperHighLevel(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
-
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit = scraper.start()
-
-  def makeKyoScraper: ScraperAdapter =
-    val services = makeKyoServices
-    // val tracingScope = Tracing.kyo("kyo-debug")
-
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        import kyo.AllowUnsafe.embrace.danger
-        import kyo.*
-        KyoApp.Unsafe
-          .runAndBlock(kyo.Duration.Infinity) {
-            Scope.run:
-              // tracingScope.map: tracing =>
-              KyoScraper(
-                fetch = services,
-                store = services,
-                // tracing = tracing,
-                root = uri"http://localhost:8080/",
-                selector = None,
-                maxDepth = scrapeMaxDepth,
-                parallelism = scraperParallelism
-              ).start
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          zio.Unsafe.unsafely {
+            zio.Runtime.default.unsafe.run(scraper.start).getOrThrow()
           }
-          .getOrThrow
 
-  def makeKyoScraperHighLevel: ScraperAdapter =
-    val services = makeKyoServices
-    val scraper = KyoScraperHighLevel(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    def makeZioScraper: ScraperAdapter =
+      val services = makeZioServices
+      val scraper = ZIOScraper(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit =
-        import kyo.AllowUnsafe.embrace.danger
-        import kyo.*
-        KyoApp.Unsafe.runAndBlock(kyo.Duration.Infinity)(scraper.start).getOrThrow
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          zio.Unsafe.unsafely {
+            zio.Runtime.default.unsafe.run(scraper.start).getOrThrow()
+          }
 
-  def makeGearsScraper: ScraperAdapter =
-    val services = makeResultServices
-    val scraper = GearsScraper(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    def makeOxScraper: ScraperAdapter =
+      val services = makeEitherServices
+      val (tracing, stop) = Tracing.sync("ox-debug")
+      val scraper = OxScraper(
+        fetch = services,
+        store = services,
+        tracing = tracing,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism,
+        queueCapacity = scraperQueueCapacity
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit = scraper.start()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          try scraper.start()
+          finally stop()
 
-  def makeGearsScraperHighLevel: ScraperAdapter =
-    val services = makeResultServices
-    val scraper = GearsScraperHighLevel(
-      fetch = services,
-      store = services,
-      root = uri"http://localhost:8080/",
-      selector = None,
-      maxDepth = scrapeMaxDepth,
-      parallelism = scraperParallelism
-    )
+    def makeOxScraperHighLevel: ScraperAdapter =
+      val services = makeEitherServices
+      val scraper = OxScraperHighLevel(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
 
-    new ScraperAdapter:
-      def maxParallelism: Int = services.maxParallelism
-      def visited: Vector[String] = services.visited
-      def hasDuplicates: Boolean = services.hasDuplicates
-      def run: Unit = scraper.start()
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start()
 
-  def normalisePath(uri: Uri): String =
-    uri.path.mkString("/") match
-      case ""   => "index"
-      case path => path
+    def makeKyoScraper: ScraperAdapter =
+      val services = makeKyoServices
+      // val tracingScope = Tracing.kyo("kyo-debug")
 
-  def makeFutureServices(using ExecutionContext): Fetch[Future] & Store[Future] & MockMetadata =
-    new Fetch[Future] with Store[Future] with MockMetadata:
-      val visitedUris = AtomicReference(Vector.empty[String])
-      val maxSeen = AtomicInteger(0)
-      val currentPending = AtomicInteger(0)
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          import kyo.AllowUnsafe.embrace.danger
+          import kyo.*
+          KyoApp.Unsafe
+            .runAndBlock(kyo.Duration.Infinity) {
+              Scope.run:
+                // tracingScope.map: tracing =>
+                KyoScraper(
+                  fetch = services,
+                  store = services,
+                  // tracing = tracing,
+                  root = uri"http://localhost:8080/",
+                  selector = None,
+                  maxDepth = scrapeMaxDepth,
+                  parallelism = scraperParallelism
+                ).start
+            }
+            .getOrThrow
 
-      def fetch(uri: Uri): Future[String] =
-        val path = normalisePath(uri)
-        routes.get(path) match
-          case Some(PageSpec(links, delay, error)) =>
-            Future {
+    def makeKyoScraperHighLevel: ScraperAdapter =
+      val services = makeKyoServices
+      val scraper = KyoScraperHighLevel(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
+
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit =
+          import kyo.AllowUnsafe.embrace.danger
+          import kyo.*
+          KyoApp.Unsafe.runAndBlock(kyo.Duration.Infinity)(scraper.start).getOrThrow
+
+    def makeGearsScraper: ScraperAdapter =
+      val services = makeResultServices
+      val scraper = GearsScraper(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
+
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start()
+
+    def makeGearsScraperHighLevel: ScraperAdapter =
+      val services = makeResultServices
+      val scraper = GearsScraperHighLevel(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
+
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start()
+
+    def normalisePath(uri: Uri): String =
+      uri.path.mkString("/") match
+        case ""   => "index"
+        case path => path
+
+    def makeFutureServices(using ExecutionContext): Fetch[Future] & Store[Future] & MockMetadata =
+      new Fetch[Future] with Store[Future] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
+
+        def fetch(uri: Uri): Future[String] =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, delay, error)) =>
+              Future {
+                currentPending.incrementAndGet()
+                maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+                delay.foreach {
+                  case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
+                  case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
+                }
+                visitedUris.getAndUpdate(v => v :+ path)
+                currentPending.decrementAndGet()
+                error.fold(Templating.page(links))(e => throw e)
+              }
+
+            case None => Future.failed(Exception(s"Page not found: $uri"))
+
+        def store(key: String, value: String): Future[Unit] =
+          Future.unit
+
+        def visited: Vector[String] = visitedUris.get()
+
+        def maxParallelism: Int = maxSeen.get()
+
+    def makeEitherServices: Fetch[EitherErrorOr] & Store[EitherErrorOr] & MockMetadata =
+      new Fetch[EitherErrorOr] with Store[EitherErrorOr] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
+
+        def fetch(uri: Uri): EitherErrorOr[String] =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, delay, error)) =>
               currentPending.incrementAndGet()
               maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
               delay.foreach {
@@ -353,202 +382,172 @@ def makeScrapers(
               }
               visitedUris.getAndUpdate(v => v :+ path)
               currentPending.decrementAndGet()
-              error.fold(Templating.page(links))(e => throw e)
-            }
+              error.fold(Right(Templating.page(links)))(Left(_))
 
-          case None => Future.failed(Exception(s"Page not found: $uri"))
+            case None => Left(Exception(s"Page not found: $uri"))
 
-      def store(key: String, value: String): Future[Unit] =
-        Future.unit
+        def store(key: String, value: String): EitherErrorOr[Unit] =
+          Right(())
 
-      def visited: Vector[String] = visitedUris.get()
+        def visited: Vector[String] = visitedUris.get()
 
-      def maxParallelism: Int = maxSeen.get()
+        def maxParallelism: Int = maxSeen.get()
 
-  def makeEitherServices: Fetch[EitherErrorOr] & Store[EitherErrorOr] & MockMetadata =
-    new Fetch[EitherErrorOr] with Store[EitherErrorOr] with MockMetadata:
-      val visitedUris = AtomicReference(Vector.empty[String])
-      val maxSeen = AtomicInteger(0)
-      val currentPending = AtomicInteger(0)
+    def makeResultServices: Fetch[ResultEx] & Store[ResultEx] & MockMetadata =
+      new Fetch[ResultEx] with Store[ResultEx] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
 
-      def fetch(uri: Uri): EitherErrorOr[String] =
-        val path = normalisePath(uri)
-        routes.get(path) match
-          case Some(PageSpec(links, delay, error)) =>
-            currentPending.incrementAndGet()
-            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-            delay.foreach {
-              case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
-              case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
-            }
-            visitedUris.getAndUpdate(v => v :+ path)
-            currentPending.decrementAndGet()
-            error.fold(Right(Templating.page(links)))(Left(_))
+        def fetch(uri: Uri): ResultEx[String] =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, delay, error)) =>
+              currentPending.incrementAndGet()
+              maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+              delay.foreach {
+                case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
+                case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
+              }
+              visitedUris.getAndUpdate(v => v :+ path)
+              currentPending.decrementAndGet()
+              error.fold(Result.Ok(Templating.page(links)))(Result.Err(_))
 
-          case None => Left(Exception(s"Page not found: $uri"))
+            case None => Result.Err(Exception(s"Page not found: $uri"))
 
-      def store(key: String, value: String): EitherErrorOr[Unit] =
-        Right(())
+        def store(key: String, value: String): ResultEx[Unit] =
+          Result.Ok(())
 
-      def visited: Vector[String] = visitedUris.get()
+        def visited: Vector[String] = visitedUris.get()
 
-      def maxParallelism: Int = maxSeen.get()
+        def maxParallelism: Int = maxSeen.get()
 
-  def makeResultServices: Fetch[Result] & Store[Result] & MockMetadata =
-    new Fetch[Result] with Store[Result] with MockMetadata:
-      val visitedUris = AtomicReference(Vector.empty[String])
-      val maxSeen = AtomicInteger(0)
-      val currentPending = AtomicInteger(0)
+    def makeCatsServicesTF[F[_]: Async]: Fetch[F] & Store[F] & MockMetadata =
+      new Fetch[F] with Store[F] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
 
-      def fetch(uri: Uri): Result[String] =
-        val path = normalisePath(uri)
-        routes.get(path) match
-          case Some(PageSpec(links, delay, error)) =>
-            currentPending.incrementAndGet()
-            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-            delay.foreach {
-              case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
-              case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
-            }
-            visitedUris.getAndUpdate(v => v :+ path)
-            currentPending.decrementAndGet()
-            error.fold(Result.Ok(Templating.page(links)))(Result.Err(_))
+        def fetch(uri: Uri): F[String] =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, maybeDelay, maybeError)) =>
+              currentPending.incrementAndGet()
+              maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+              for
+                _ <- maybeDelay.fold(Sync[F].unit)(d => Async[F].sleep(d))
+                _ <- Sync[F].delay(visitedUris.getAndUpdate(_ :+ path))
+                result <- maybeError.fold(Sync[F].delay(Templating.page(links)))(e => Sync[F].raiseError(e))
+                _ <- Sync[F].delay(currentPending.decrementAndGet())
+              yield result
+            case None =>
+              Sync[F].raiseError(Exception(s"Page not found: $uri"))
 
-          case None => Result.Err(Exception(s"Page not found: $uri"))
+        def store(key: String, value: String): F[Unit] =
+          Sync[F].unit
 
-      def store(key: String, value: String): Result[Unit] =
-        Result.Ok(())
+        def visited: Vector[String] = visitedUris.get()
 
-      def visited: Vector[String] = visitedUris.get()
+        def maxParallelism: Int = maxSeen.get()
 
-      def maxParallelism: Int = maxSeen.get()
+    def makeCatsServices: Fetch[IO] & Store[IO] & MockMetadata =
+      new Fetch[IO] with Store[IO] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
 
-  def makeCatsServicesTF[F[_]: Async]: Fetch[F] & Store[F] & MockMetadata =
-    new Fetch[F] with Store[F] with MockMetadata:
-      val visitedUris = AtomicReference(Vector.empty[String])
-      val maxSeen = AtomicInteger(0)
-      val currentPending = AtomicInteger(0)
+        def fetch(uri: Uri): IO[String] =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, maybeDelay, maybeError)) =>
+              currentPending.incrementAndGet()
+              maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+              for
+                _ <- maybeDelay.fold(IO.unit)(d => IO.sleep(d))
+                _ <- IO(visitedUris.getAndUpdate(_ :+ path))
+                result <- maybeError.fold(IO(Templating.page(links)))(e => IO.raiseError(e))
+                _ <- IO(currentPending.decrementAndGet())
+              yield result
+            case None =>
+              IO.raiseError(Exception(s"Page not found: $uri"))
 
-      def fetch(uri: Uri): F[String] =
-        val path = normalisePath(uri)
-        routes.get(path) match
-          case Some(PageSpec(links, maybeDelay, maybeError)) =>
-            currentPending.incrementAndGet()
-            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-            for
-              _ <- maybeDelay.fold(Sync[F].unit)(d => Async[F].sleep(d))
-              _ <- Sync[F].delay(visitedUris.getAndUpdate(_ :+ path))
-              result <- maybeError.fold(Sync[F].delay(Templating.page(links)))(e => Sync[F].raiseError(e))
-              _ <- Sync[F].delay(currentPending.decrementAndGet())
-            yield result
-          case None =>
-            Sync[F].raiseError(Exception(s"Page not found: $uri"))
+        def store(key: String, value: String): IO[Unit] =
+          IO.unit
 
-      def store(key: String, value: String): F[Unit] =
-        Sync[F].unit
+        def visited: Vector[String] = visitedUris.get()
 
-      def visited: Vector[String] = visitedUris.get()
+        def maxParallelism: Int = maxSeen.get()
 
-      def maxParallelism: Int = maxSeen.get()
+    def makeZioServices: Fetch[ZTask] & Store[ZTask] & MockMetadata =
+      new Fetch[ZTask] with Store[ZTask] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
 
-  def makeCatsServices: Fetch[IO] & Store[IO] & MockMetadata =
-    new Fetch[IO] with Store[IO] with MockMetadata:
-      val visitedUris = AtomicReference(Vector.empty[String])
-      val maxSeen = AtomicInteger(0)
-      val currentPending = AtomicInteger(0)
+        def fetch(uri: Uri): ZTask[String] =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, maybeDelay, maybeError)) =>
+              currentPending.incrementAndGet()
+              maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+              for
+                _ <- maybeDelay.fold(ZIO.unit)(d => ZIO.sleep(zio.Duration.fromScala(d)))
+                _ <- ZIO.succeed(visitedUris.getAndUpdate(_ :+ path))
+                result <- maybeError.fold(ZIO.succeed(Templating.page(links)))(e => ZIO.fail(e))
+                _ <- ZIO.succeed(currentPending.decrementAndGet())
+              yield result
+            case None =>
+              ZIO.fail(Exception(s"Page not found: $uri"))
 
-      def fetch(uri: Uri): IO[String] =
-        val path = normalisePath(uri)
-        routes.get(path) match
-          case Some(PageSpec(links, maybeDelay, maybeError)) =>
-            currentPending.incrementAndGet()
-            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-            for
-              _ <- maybeDelay.fold(IO.unit)(d => IO.sleep(d))
-              _ <- IO(visitedUris.getAndUpdate(_ :+ path))
-              result <- maybeError.fold(IO(Templating.page(links)))(e => IO.raiseError(e))
-              _ <- IO(currentPending.decrementAndGet())
-            yield result
-          case None =>
-            IO.raiseError(Exception(s"Page not found: $uri"))
+        def store(key: String, value: String): ZTask[Unit] =
+          ZIO.unit
 
-      def store(key: String, value: String): IO[Unit] =
-        IO.unit
+        def visited: Vector[String] = visitedUris.get()
 
-      def visited: Vector[String] = visitedUris.get()
+        def maxParallelism: Int = maxSeen.get()
 
-      def maxParallelism: Int = maxSeen.get()
+    def makeKyoServices: Fetch[Kyo] & Store[Kyo] & MockMetadata =
+      new Fetch[Kyo] with Store[Kyo] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
 
-  def makeZioServices: Fetch[ZTask] & Store[ZTask] & MockMetadata =
-    new Fetch[ZTask] with Store[ZTask] with MockMetadata:
-      val visitedUris = AtomicReference(Vector.empty[String])
-      val maxSeen = AtomicInteger(0)
-      val currentPending = AtomicInteger(0)
+        def fetch(uri: Uri): Kyo[String] =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, maybeDelay, maybeError)) =>
+              currentPending.incrementAndGet()
+              maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+              for
+                _ <- maybeDelay.fold(Kyo.unit)(d => Kyo.sleep(kyo.Duration.fromScala(d)))
+                _ <- KyoSync.defer(visitedUris.getAndUpdate(_ :+ path))
+                result <- maybeError.fold(KyoSync.defer(Templating.page(links)))(e => Kyo.fail(e))
+                _ <- KyoSync.defer(currentPending.decrementAndGet())
+              yield result
+            case None =>
+              Kyo.fail(Exception(s"Page not found: $uri"))
 
-      def fetch(uri: Uri): ZTask[String] =
-        val path = normalisePath(uri)
-        routes.get(path) match
-          case Some(PageSpec(links, maybeDelay, maybeError)) =>
-            currentPending.incrementAndGet()
-            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-            for
-              _ <- maybeDelay.fold(ZIO.unit)(d => ZIO.sleep(zio.Duration.fromScala(d)))
-              _ <- ZIO.succeed(visitedUris.getAndUpdate(_ :+ path))
-              result <- maybeError.fold(ZIO.succeed(Templating.page(links)))(e => ZIO.fail(e))
-              _ <- ZIO.succeed(currentPending.decrementAndGet())
-            yield result
-          case None =>
-            ZIO.fail(Exception(s"Page not found: $uri"))
+        def store(key: String, value: String): Kyo[Unit] =
+          Kyo.unit
 
-      def store(key: String, value: String): ZTask[Unit] =
-        ZIO.unit
+        def visited: Vector[String] = visitedUris.get()
 
-      def visited: Vector[String] = visitedUris.get()
+        def maxParallelism: Int = maxSeen.get()
 
-      def maxParallelism: Int = maxSeen.get()
-
-  def makeKyoServices: Fetch[Kyo] & Store[Kyo] & MockMetadata =
-    new Fetch[Kyo] with Store[Kyo] with MockMetadata:
-      val visitedUris = AtomicReference(Vector.empty[String])
-      val maxSeen = AtomicInteger(0)
-      val currentPending = AtomicInteger(0)
-
-      def fetch(uri: Uri): Kyo[String] =
-        val path = normalisePath(uri)
-        routes.get(path) match
-          case Some(PageSpec(links, maybeDelay, maybeError)) =>
-            currentPending.incrementAndGet()
-            maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-            for
-              _ <- maybeDelay.fold(Kyo.unit)(d => Kyo.sleep(kyo.Duration.fromScala(d)))
-              _ <- KyoSync.defer(visitedUris.getAndUpdate(_ :+ path))
-              result <- maybeError.fold(KyoSync.defer(Templating.page(links)))(e => Kyo.fail(e))
-              _ <- KyoSync.defer(currentPending.decrementAndGet())
-            yield result
-          case None =>
-            Kyo.fail(Exception(s"Page not found: $uri"))
-
-      def store(key: String, value: String): Kyo[Unit] =
-        Kyo.unit
-
-      def visited: Vector[String] = visitedUris.get()
-
-      def maxParallelism: Int = maxSeen.get()
-
-  Map(
-    "future" -> makeFutureScraper,
-    "cats" -> makeCatsScraper,
-    "zio" -> makeZioScraper,
-    "kyo" -> makeKyoScraper,
-    "ox" -> makeOxScraper,
-    "gears" -> makeGearsScraper,
-    "cats-tf" -> makeCatsScraperTF,
-    "future-high-level" -> makeFutureScraperHighLevel,
-    "cats-high-level" -> makeCatsScraperHighLevel,
-    "zio-high-level" -> makeZioScraperHighLevel,
-    "kyo-high-level" -> makeKyoScraperHighLevel,
-    "ox-high-level" -> makeOxScraperHighLevel,
-    "gears-high-level" -> makeGearsScraperHighLevel,
-    "cats-high-tf" -> makeCatsScraperHighTF
-  )
-end makeScrapers
+    Map(
+      "future" -> makeFutureScraper,
+      "cats" -> makeCatsScraper,
+      "zio" -> makeZioScraper,
+      "kyo" -> makeKyoScraper,
+      "ox" -> makeOxScraper,
+      "gears" -> makeGearsScraper,
+      "cats-tf" -> makeCatsScraperTF,
+      "future-high-level" -> makeFutureScraperHighLevel,
+      "cats-high-level" -> makeCatsScraperHighLevel,
+      "zio-high-level" -> makeZioScraperHighLevel,
+      "kyo-high-level" -> makeKyoScraperHighLevel,
+      "ox-high-level" -> makeOxScraperHighLevel,
+      "gears-high-level" -> makeGearsScraperHighLevel,
+      "cats-high-tf" -> makeCatsScraperHighTF
+    )
+  end makeScrapers
