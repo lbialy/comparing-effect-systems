@@ -48,7 +48,7 @@ class GearsScraper(
 
   private def crawl(uri: Uri, depth: Int)(using Async.Spawn): ResultEx[Unit] =
     JvmAsyncOperations.jvmInterruptible:
-      Result[Unit, Throwable]:
+      Result:
         semaphore.acquire()
         try
           val content = fetch.fetch(uri).ok

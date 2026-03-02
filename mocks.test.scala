@@ -5,6 +5,7 @@ import cats.effect.IO
 import cats.effect.Sync
 import cats.syntax.all.*
 import kyo.{Async as _, Result as _, Sync as KyoSync, *}
+// import steps.result.*
 import sttp.model.Uri
 import zio.Task as ZTask
 import zio.ZIO
@@ -17,6 +18,8 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
 import Uri.*
+
+// type ResultEx[+A] = Result[A, Throwable]
 
 object Templating:
   def page(links: Set[String]): String =
