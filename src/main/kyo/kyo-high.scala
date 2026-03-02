@@ -45,7 +45,7 @@ class KyoScraperHighLevel(
                 if currentInFlight > 0 then Loop.continue
                 else queue.closeAwaitEmpty.andThen(Loop.done)
 
-  def crawl(uri: Uri, depth: Int, inFlight: AtomicInt, queue: Channel[Scrape]): Unit < (Async & Abort[Throwable]) =
+  private def crawl(uri: Uri, depth: Int, inFlight: AtomicInt, queue: Channel[Scrape]): Unit < (Async & Abort[Throwable]) =
     for
       content <- fetch.fetch(uri)
       (links, markdown) <- Abort.get(MdConverter.convertAndExtractLinks(content, uri, selector))

@@ -1,7 +1,7 @@
 package ma.chinespirit.crawldown
 
 import java.util.concurrent.*
-import scala.concurrent.{Future, ExecutionContext}
+import scala.concurrent.{Future, ExecutionContext, blocking}
 import sttp.model.Uri
 import scala.util.*
 
@@ -19,32 +19,33 @@ class FutureScraper(
     queueCapacity: Int = 10
 )(using ec: ExecutionContext):
 
-  private val queue = ArrayBlockingQueue[Scrape | Done | Throwable](queueCapacity)
-  private val semaphore = Semaphore(parallelism)
+  type Queue = ArrayBlockingQueue[Scrape | Done | Throwable]
 
   def start(): Unit =
+    val queue = ArrayBlockingQueue[Scrape | Done | Throwable](queueCapacity)
+    val semaphore = Semaphore(parallelism)
     queue.put(Scrape(root, 0))
     val visited = Set.empty[Uri]
-    coordinator(visited, 0)
+    coordinator(visited, 0, queue, semaphore)
 
-  private def coordinator(visited: Set[Uri], inFlight: Int): Unit =
+  private def coordinator(visited: Set[Uri], inFlight: Int, queue: Queue, semaphore: Semaphore): Unit =
     if queue.isEmpty && inFlight == 0 then ()
     else
       queue.take() match
         case ex: Throwable => throw ex
         case Scrape(url, depth) =>
-          if depth >= maxDepth then coordinator(visited, inFlight)
+          if depth >= maxDepth then coordinator(visited, inFlight, queue, semaphore)
           else if !visited.contains(url) then
-            crawl(url, depth)
-            coordinator(visited + url, inFlight + 1)
-          else coordinator(visited, inFlight)
+            crawl(url, depth, queue, semaphore)
+            coordinator(visited + url, inFlight + 1, queue, semaphore)
+          else coordinator(visited, inFlight, queue, semaphore)
 
         case Done =>
-          coordinator(visited, inFlight - 1)
+          coordinator(visited, inFlight - 1, queue, semaphore)
 
-  private def crawl(uri: Uri, depth: Int): Future[Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue, semaphore: Semaphore): Future[Unit] =
     val result = for
-      _ <- Future { semaphore.acquire() }
+      _ <- Future { blocking { semaphore.acquire() } }
       content <- fetch.fetch(uri)
       (links, markdown) <- MdConverter.convertAndExtractLinks(content, uri, selector).toFuture
       pushFrontier = Future { links.map(Scrape(_, depth + 1)).foreach(queue.put) }

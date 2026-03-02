@@ -427,12 +427,14 @@ object Scrapers:
             case Some(PageSpec(links, maybeDelay, maybeError)) =>
               currentPending.incrementAndGet()
               maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-              for
-                _ <- maybeDelay.fold(Sync[F].unit)(d => Async[F].sleep(d))
-                _ <- Sync[F].delay(visitedUris.getAndUpdate(_ :+ path))
-                result <- maybeError.fold(Sync[F].delay(Templating.page(links)))(e => Sync[F].raiseError(e))
-                _ <- Sync[F].delay(currentPending.decrementAndGet())
-              yield result
+              Async[F].guarantee(
+                for
+                  _ <- maybeDelay.fold(Sync[F].unit)(d => Async[F].sleep(d))
+                  _ <- Sync[F].delay(visitedUris.getAndUpdate(_ :+ path))
+                  result <- maybeError.fold(Sync[F].delay(Templating.page(links)))(e => Sync[F].raiseError(e))
+                yield result,
+                Sync[F].delay(currentPending.decrementAndGet())
+              )
             case None =>
               Sync[F].raiseError(Exception(s"Page not found: $uri"))
 
@@ -455,12 +457,11 @@ object Scrapers:
             case Some(PageSpec(links, maybeDelay, maybeError)) =>
               currentPending.incrementAndGet()
               maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-              for
+              (for
                 _ <- maybeDelay.fold(IO.unit)(d => IO.sleep(d))
                 _ <- IO(visitedUris.getAndUpdate(_ :+ path))
                 result <- maybeError.fold(IO(Templating.page(links)))(e => IO.raiseError(e))
-                _ <- IO(currentPending.decrementAndGet())
-              yield result
+              yield result).guarantee(IO(currentPending.decrementAndGet()))
             case None =>
               IO.raiseError(Exception(s"Page not found: $uri"))
 
@@ -483,12 +484,11 @@ object Scrapers:
             case Some(PageSpec(links, maybeDelay, maybeError)) =>
               currentPending.incrementAndGet()
               maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-              for
+              (for
                 _ <- maybeDelay.fold(ZIO.unit)(d => ZIO.sleep(zio.Duration.fromScala(d)))
                 _ <- ZIO.succeed(visitedUris.getAndUpdate(_ :+ path))
                 result <- maybeError.fold(ZIO.succeed(Templating.page(links)))(e => ZIO.fail(e))
-                _ <- ZIO.succeed(currentPending.decrementAndGet())
-              yield result
+              yield result).ensuring(ZIO.succeed(currentPending.decrementAndGet()))
             case None =>
               ZIO.fail(Exception(s"Page not found: $uri"))
 
@@ -511,12 +511,15 @@ object Scrapers:
             case Some(PageSpec(links, maybeDelay, maybeError)) =>
               currentPending.incrementAndGet()
               maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-              for
-                _ <- maybeDelay.fold(Kyo.unit)(d => Kyo.sleep(kyo.Duration.fromScala(d)))
-                _ <- KyoSync.defer(visitedUris.getAndUpdate(_ :+ path))
-                result <- maybeError.fold(KyoSync.defer(Templating.page(links)))(e => Kyo.fail(e))
-                _ <- KyoSync.defer(currentPending.decrementAndGet())
-              yield result
+              Scope.run:
+                Scope
+                  .ensure(currentPending.decrementAndGet())
+                  .andThen:
+                    for
+                      _ <- maybeDelay.fold(Kyo.unit)(d => Kyo.sleep(kyo.Duration.fromScala(d)))
+                      _ <- KyoSync.defer(visitedUris.getAndUpdate(_ :+ path))
+                      result <- maybeError.fold(KyoSync.defer(Templating.page(links)))(e => Kyo.fail(e))
+                    yield result
             case None =>
               Kyo.fail(Exception(s"Page not found: $uri"))
 

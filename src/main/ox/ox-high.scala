@@ -13,33 +13,35 @@ class OxScraperHighLevel(
     maxDepth: Int,
     parallelism: Int = 8
 ):
-  private val queue = Channel.unlimited[Scrape]
-  private val inFlight = AtomicInteger(0)
-  private val visited = AtomicReference[Set[Uri]](Set.empty)
+  type Visited = AtomicReference[Set[Uri]]
 
   def start(): Unit =
+    val queue = Channel.unlimited[Scrape]
+    val inFlight = AtomicInteger(0)
+    val visited = AtomicReference[Set[Uri]](Set.empty)
+
     inFlight.incrementAndGet()
     queue.send(Scrape(root, 0))
 
-    Vector.fill(parallelism)(()).mapPar(parallelism)(_ => worker(queue, inFlight))
+    Vector.fill(parallelism)(()).mapPar(parallelism)(_ => worker(queue, visited, inFlight))
   end start
 
   @tailrec
-  private def worker(queue: Channel[Scrape], inFlight: AtomicInteger): Unit =
+  private def worker(queue: Channel[Scrape], visited: Visited, inFlight: AtomicInteger): Unit =
     queue.receiveOrClosed() match
       case Scrape(uri, depth) =>
         if depth >= maxDepth then ()
         else if visited.getAndUpdate(_ + uri).contains(uri) then ()
-        else crawl(uri, depth).orThrow
+        else crawl(uri, depth, queue, inFlight).orThrow
 
         val currentInFlight = inFlight.decrementAndGet()
-        if currentInFlight > 0 then worker(queue, inFlight)
+        if currentInFlight > 0 then worker(queue, visited, inFlight)
         else queue.doneOrClosed()
 
       case ChannelClosed.Done     => ()
       case ChannelClosed.Error(e) => throw e
 
-  private def crawl(uri: Uri, depth: Int): Either[Throwable, Unit] = either:
+  private def crawl(uri: Uri, depth: Int, queue: Channel[Scrape], inFlight: AtomicInteger): Either[Throwable, Unit] = either:
     val content = fetch.fetch(uri).ok()
     val (links, markdown) = MdConverter.convertAndExtractLinks(content, uri, selector).ok()
     val key = Names.toFilename(uri, root)

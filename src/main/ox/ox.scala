@@ -14,33 +14,33 @@ class OxScraper(
     parallelism: Int = 8,
     queueCapacity: Int = 10
 ):
-  private val queue = ArrayBlockingQueue[Scrape | Done](queueCapacity)
-  private val semaphore = Semaphore(parallelism)
+  type Queue = ArrayBlockingQueue[Scrape | Done]
 
   def start(): Unit =
+    val queue = ArrayBlockingQueue[Scrape | Done](queueCapacity)
+    val semaphore = Semaphore(parallelism)
+
     queue.put(Scrape(root, 0))
 
     supervised:
-      coordinator(Set.empty, 0)
-
-  end start
+      coordinator(Set.empty, queue, semaphore, 0)
 
   @tailrec
-  private def coordinator(visited: Set[Uri], inFlight: Int)(using Ox): Unit =
+  private def coordinator(visited: Set[Uri], queue: Queue, semaphore: Semaphore, inFlight: Int)(using Ox): Unit =
     if queue.isEmpty && inFlight == 0 then ()
     else
       queue.take() match
         case Scrape(uri, depth) =>
-          if depth >= maxDepth then coordinator(visited, inFlight)
+          if depth >= maxDepth then coordinator(visited, queue, semaphore, inFlight)
           else if !visited.contains(uri) then
             forkUser:
-              crawl(uri, depth).orThrow
-            coordinator(visited + uri, inFlight + 1)
-          else coordinator(visited, inFlight)
+              crawl(uri, depth, queue, semaphore).orThrow
+            coordinator(visited + uri, queue, semaphore, inFlight + 1)
+          else coordinator(visited, queue, semaphore, inFlight)
         case Done =>
-          coordinator(visited, inFlight - 1)
+          coordinator(visited, queue, semaphore, inFlight - 1)
 
-  private def crawl(uri: Uri, depth: Int): Either[Throwable, Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue, semaphore: Semaphore): Either[Throwable, Unit] =
     either:
       semaphore.acquire()
       try

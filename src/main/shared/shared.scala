@@ -6,6 +6,7 @@ import cats.syntax.all.*
 import kyo.{Async as KyoAsync, Sync as KyoSync, Result as _, *}
 import sttp.client4.quick.*
 import sttp.model.Uri
+import scala.util.Try
 import zio.Task as ZTask
 import zio.ZIO
 import steps.result.*
@@ -14,7 +15,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.blocking
 
-given Conversion[Throwable, Throwable] = t => t
+// given Conversion[Throwable, Throwable] = t => t
 
 extension [E, A](either: Either[E, A])
   def toResult: Result[A, E] =
@@ -85,16 +86,22 @@ object Fetch:
 
   def either: Fetch[EitherErrorOr] = new Fetch[EitherErrorOr]:
     def fetch(uri: Uri): EitherErrorOr[String] =
-      val response = basicRequest.get(uri).send()
-      response.body match
+      val response =
+        try basicRequest.get(uri).send().body
+        catch case ex => Left(ex.getMessage())
+
+      response match
         case Left(error) =>
           Left(Exception(s"Failed to fetch $uri: $error"))
         case Right(body) => Right(body)
 
   def result: Fetch[ResultEx] = new Fetch[ResultEx]:
     def fetch(uri: Uri): ResultEx[String] =
-      val response = basicRequest.get(uri).send()
-      response.body match
+      val response =
+        try basicRequest.get(uri).send().body
+        catch case ex => Left(ex)
+
+      response match
         case Left(error) => Result.Err(Exception(s"Failed to fetch $uri: $error"))
         case Right(body) => Result.Ok(body)
 
@@ -144,16 +151,14 @@ object Store:
 
     new Store[EitherErrorOr]:
       def store(key: String, value: String): EitherErrorOr[Unit] =
-        os.write(dir / key, value)
-        Right(())
+        Try(os.write(dir / key, value)).toEither
 
   def result(dir: os.Path): Store[ResultEx] =
     os.makeDir.all(dir)
 
     new Store[ResultEx]:
       def store(key: String, value: String): ResultEx[Unit] =
-        os.write(dir / key, value)
-        Result.Ok(())
+        Try(os.write(dir / key, value)).toEither.toResult
 
 object Names:
   def toDirname(uri: Uri): String =

@@ -4,9 +4,15 @@ import sttp.model.Uri
 import com.vladsch.flexmark.util.data.MutableDataSet
 import com.vladsch.flexmark.html2md.converter.*
 import scala.jdk.CollectionConverters.*
+import org.jsoup.nodes.Element
 import org.jsoup.Jsoup
 
 object MdConverter:
+
+  extension (elem: Element)
+    inline def failIfNotFound(selector: String): Element =
+      if elem == null then throw Exception(s"Element was not found for selector $selector!")
+      else elem
 
   private val Converter = FlexmarkHtmlConverter.builder(MutableDataSet()).build()
 
@@ -35,7 +41,7 @@ object MdConverter:
       val noFragmentLinks = selfLinks.map(_.fragment(None)).distinct
 
       val htmlNodeToConvert = selector match
-        case Some(selector) => parsed.select(selector).first()
+        case Some(selector) => parsed.select(selector).first().failIfNotFound(selector)
         case None           => parsed
 
       val markdown = Converter.convert(htmlNodeToConvert)

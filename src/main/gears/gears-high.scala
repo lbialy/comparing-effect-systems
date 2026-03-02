@@ -18,34 +18,37 @@ class GearsScraperHighLevel(
     maxDepth: Int,
     parallelism: Int = 8
 ):
-  private val queue = LinkedBlockingDeque[Scrape | Done]()
-  private val inFlight = AtomicInteger(0)
-  private val visited = AtomicReference[Set[Uri]](Set.empty)
+  type Queue = LinkedBlockingDeque[Scrape | Done]
+  type Visited = AtomicReference[Set[Uri]]
 
   def start(): Unit =
+    val queue = LinkedBlockingDeque[Scrape | Done]()
+    val inFlight = AtomicInteger(0)
+    val visited = AtomicReference[Set[Uri]](Set.empty)
+
     inFlight.incrementAndGet()
     queue.put(Scrape(root, 0))
 
     Async.blocking:
-      Vector.fill(parallelism)(Future(worker(queue, inFlight))).awaitAllOrCancel
+      Vector.fill(parallelism)(Future(worker(queue, visited, inFlight))).awaitAllOrCancel
 
   @tailrec
-  private def worker(queue: LinkedBlockingDeque[Scrape | Done], inFlight: AtomicInteger)(using Async.Spawn): Unit =
+  private def worker(queue: Queue, visited: Visited, inFlight: AtomicInteger)(using Async.Spawn): Unit =
     queue.take() match
       case Done => ()
       case Scrape(uri, depth) =>
         if depth >= maxDepth then ()
         else if visited.getAndUpdate(_ + uri).contains(uri) then ()
         else
-          crawl(uri, depth) match
+          crawl(uri, depth, queue, inFlight) match
             case Result.Err(e) => throw e
             case Result.Ok(_)  => ()
 
         val currentInFlight = inFlight.decrementAndGet()
-        if currentInFlight > 0 then worker(queue, inFlight)
+        if currentInFlight > 0 then worker(queue, visited, inFlight)
         else for _ <- 0 until parallelism do queue.put(Done)
 
-  private def crawl(uri: Uri, depth: Int)(using async: Async.Spawn): ResultEx[Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue, inFlight: AtomicInteger)(using async: Async.Spawn): ResultEx[Unit] =
     JvmAsyncOperations.jvmInterruptible:
       Result:
         val content = fetch.fetch(uri).ok

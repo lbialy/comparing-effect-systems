@@ -16,28 +16,32 @@ class FutureScraperHighLevel(
     parallelism: Int = 8
 )(using ec: ExecutionContext):
 
-  private val queue = LinkedBlockingQueue[Scrape | Done]()
-  private val inFlight = AtomicInteger(0)
-  private val visited = AtomicReference[Set[Uri]](Set.empty)
+  type Queue = LinkedBlockingQueue[Scrape | Done]
+  type Visited = AtomicReference[Set[Uri]]
 
   def start(): Unit =
+    val queue = LinkedBlockingQueue[Scrape | Done]()
+    val inFlight = AtomicInteger(0)
+    val visited = AtomicReference[Set[Uri]](Set.empty)
+
     queue.put(Scrape(root, 0))
+
     inFlight.incrementAndGet()
 
-    Await.result(Future.sequence(Vector.fill(parallelism)(worker(queue, inFlight))), Duration.Inf)
+    Await.result(Future.sequence(Vector.fill(parallelism)(worker(queue, inFlight, visited))), Duration.Inf)
 
-  private def worker(queue: LinkedBlockingQueue[Scrape | Done], inFlight: AtomicInteger): Future[Unit] =
+  private def worker(queue: Queue, inFlight: AtomicInteger, visited: Visited): Future[Unit] =
     Future { blocking(queue.take()) }.flatMap {
       case Scrape(uri, depth) =>
         val result =
           if depth >= maxDepth then Future.unit
           else if visited.getAndUpdate(_ + uri).contains(uri) then Future.unit
-          else crawl(uri, depth)
+          else crawl(uri, depth, queue, inFlight)
 
         result.transformWith {
           case Success(_) =>
             val currentInFlight = inFlight.decrementAndGet()
-            if currentInFlight > 0 then worker(queue, inFlight)
+            if currentInFlight > 0 then worker(queue, inFlight, visited)
             else Future(Vector.fill(parallelism)(Done).foreach(queue.put))
           case Failure(ex) =>
             Future(Vector.fill(parallelism)(Done).foreach(queue.put)).flatMap(_ => Future.failed(ex))
@@ -47,7 +51,7 @@ class FutureScraperHighLevel(
         Future.unit
     }
 
-  private def crawl(uri: Uri, depth: Int): Future[Unit] =
+  private def crawl(uri: Uri, depth: Int, queue: Queue, inFlight: AtomicInteger): Future[Unit] =
     for
       content <- fetch.fetch(uri)
       (links, markdown) <- MdConverter.convertAndExtractLinks(content, uri, selector).toFuture
