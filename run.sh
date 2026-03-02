@@ -10,5 +10,5 @@ SELECTOR=${3:-'div[role=main]'}
 HOST_DIRNAME=$(echo $HOST | sed 's|^https://||; s|^http://||; s|/$||; s|/|_|g')
 
 rm -fr $HOST_DIRNAME
-scala-cli package . -o crawldown -f
+scala-cli package src -o crawldown -f
 ./crawldown $VARIANT $HOST $SELECTOR

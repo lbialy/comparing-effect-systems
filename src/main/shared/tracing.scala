@@ -22,6 +22,9 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.*
 
+/** This module is only used to debug concurrency issues
+  */
+
 case class Trace(id: UUID, uri: Option[Uri])
 object Trace:
   def apply(uri: Option[Uri]): Trace = Trace(UUID.randomUUID(), uri)

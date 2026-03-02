@@ -210,11 +210,9 @@ object Scrapers:
 
     def makeOxScraper: ScraperAdapter =
       val services = makeEitherServices
-      val (tracing, stop) = Tracing.sync("ox-debug")
       val scraper = OxScraper(
         fetch = services,
         store = services,
-        tracing = tracing,
         root = uri"http://localhost:8080/",
         selector = None,
         maxDepth = scrapeMaxDepth,
@@ -226,9 +224,7 @@ object Scrapers:
         def maxParallelism: Int = services.maxParallelism
         def visited: Vector[String] = services.visited
         def hasDuplicates: Boolean = services.hasDuplicates
-        def run: Unit =
-          try scraper.start()
-          finally stop()
+        def run: Unit = scraper.start()
 
     def makeOxScraperHighLevel: ScraperAdapter =
       val services = makeEitherServices
@@ -249,7 +245,6 @@ object Scrapers:
 
     def makeKyoScraper: ScraperAdapter =
       val services = makeKyoServices
-      // val tracingScope = Tracing.kyo("kyo-debug")
 
       new ScraperAdapter:
         def maxParallelism: Int = services.maxParallelism
@@ -261,11 +256,9 @@ object Scrapers:
           KyoApp.Unsafe
             .runAndBlock(kyo.Duration.Infinity) {
               Scope.run:
-                // tracingScope.map: tracing =>
                 KyoScraper(
                   fetch = services,
                   store = services,
-                  // tracing = tracing,
                   root = uri"http://localhost:8080/",
                   selector = None,
                   maxDepth = scrapeMaxDepth,
