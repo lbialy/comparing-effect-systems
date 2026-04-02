@@ -337,15 +337,17 @@ object Scrapers:
           routes.get(path) match
             case Some(PageSpec(links, delay, error)) =>
               Future {
-                currentPending.incrementAndGet()
-                maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
-                delay.foreach {
-                  case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
-                  case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
+                scala.concurrent.blocking {
+                  currentPending.incrementAndGet()
+                  maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+                  delay.foreach {
+                    case fin: FiniteDuration  => Thread.sleep(fin.toMillis)
+                    case _: Duration.Infinite => Thread.sleep(Long.MaxValue)
+                  }
+                  visitedUris.getAndUpdate(v => v :+ path)
+                  currentPending.decrementAndGet()
+                  error.fold(Templating.page(links))(e => throw e)
                 }
-                visitedUris.getAndUpdate(v => v :+ path)
-                currentPending.decrementAndGet()
-                error.fold(Templating.page(links))(e => throw e)
               }
 
             case None => Future.failed(Exception(s"Page not found: $uri"))

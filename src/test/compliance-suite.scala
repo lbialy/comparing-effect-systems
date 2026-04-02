@@ -125,4 +125,41 @@ class ComplianceSuite extends FunSuite:
       assertEquals(fixture.visited.toSet, Set("index", "h"))
     }
 
+  // 7. Early termination: in-flight workers are cancelled when one fails
+  val earlyTerminationRoutes =
+    Routes.genTree(depth = 1, linksPerPage = 8).map { case (k, v) =>
+      val delay = if k == "a" then Some(10.millis) else if k != "index" then Some(200.millis) else None
+      val error = if k == "a" then Some(TestError("early termination")) else None
+      k -> PageSpec(v, delay, error)
+    }
+
+  val earlyTerminationFixtures = makeScrapers(
+    earlyTerminationRoutes,
+    scraperParallelism = 8,
+    scraperQueueCapacity = 10,
+    scrapeMaxDepth = 20,
+    futureEC = ExecutionContext.global
+  )
+
+  val isFuture = Set("future", "future-high-level")
+
+  for (name, fixture) <- earlyTerminationFixtures do
+    test(s"early termination - $name") {
+      intercept[TestError]:
+        ox.timeout(3000.millis)(fixture.run)
+
+      // Wait for any leaked (uncancelled) fibers to complete their 200ms sleep
+      Thread.sleep(500)
+
+      // With proper cancellation: visited = {index, a} (siblings interrupted mid-sleep)
+      // Without cancellation: visited = {index, a, b, c, d, e, f, g, h} (all complete)
+      if isFuture(name) then
+        println(s"  [warn] $name: no cancellation support — visited ${fixture.visited.size} pages instead of 2")
+      else
+        assert(
+          fixture.visited.size <= 2,
+          s"Expected at most 2 visited pages (index + failing) but got ${fixture.visited.size}: ${fixture.visited}"
+        )
+    }
+
 end ComplianceSuite

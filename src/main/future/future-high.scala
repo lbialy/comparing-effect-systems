@@ -2,7 +2,7 @@ package ma.chinespirit.crawldown
 
 import scala.concurrent.*
 import scala.concurrent.duration.Duration
-import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.atomic.*
 import sttp.model.Uri
 import scala.util.*
@@ -16,11 +16,18 @@ class FutureScraperHighLevel(
     parallelism: Int = 8
 )(using ec: ExecutionContext):
 
-  type Queue = LinkedBlockingQueue[Scrape | Done]
+  type Queue = PriorityBlockingQueue[Scrape | Done]
   type Visited = AtomicReference[Set[Uri]]
 
   def start(): Unit =
-    val queue = LinkedBlockingQueue[Scrape | Done]()
+    val initialCapacity = 11
+    val queue = PriorityBlockingQueue[Scrape | Done](
+      initialCapacity,
+      Ordering.fromLessThan {
+        case (Done, _: Scrape) => true
+        case _                 => false
+      }
+    )
     val inFlight = AtomicInteger(0)
     val visited = AtomicReference[Set[Uri]](Set.empty)
 
