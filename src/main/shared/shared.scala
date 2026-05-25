@@ -9,6 +9,8 @@ import sttp.model.Uri
 import scala.util.Try
 import zio.Task as ZTask
 import zio.ZIO
+import turbolift.!!
+import turbolift.effects.IO as TIO
 import steps.result.*
 
 import scala.concurrent.ExecutionContext
@@ -28,6 +30,8 @@ type ResultEx[+A] = Result[A, Throwable]
 type EitherErrorOr[+A] = Either[Throwable, A]
 
 type Kyo[+A] = A < (KyoAsync & Abort[Throwable])
+
+type TTask[+A] = A !! TIO
 
 case class Scrape(uri: Uri, depth: Int)
 sealed trait Done
@@ -82,6 +86,15 @@ object Fetch:
           case Left(error) =>
             Abort.fail(Exception(s"Failed to fetch $uri: $error"))
           case Right(body) => KyoSync.defer(body)
+      }
+
+  def turbolift: Fetch[TTask] = new Fetch[TTask]:
+    def fetch(uri: Uri): String !! TIO =
+      TIO.blocking(basicRequest.get(uri).send()).flatMap { response =>
+        response.body match
+          case Left(error) =>
+            TIO.raise(Exception(s"Failed to fetch $uri: $error"))
+          case Right(body) => !!.pure(body)
       }
 
   def either: Fetch[EitherErrorOr] = new Fetch[EitherErrorOr]:
@@ -145,6 +158,13 @@ object Store:
     new Store[Kyo]:
       def store(key: String, value: String): Kyo[Unit] =
         KyoSync.defer(Abort.catching(os.write(dir / key, value)))
+
+  def turbolift(dir: os.Path): Store[TTask] =
+    os.makeDir.all(dir)
+
+    new Store[TTask]:
+      def store(key: String, value: String): Unit !! TIO =
+        TIO.blocking(os.write(dir / key, value))
 
   def either(dir: os.Path): Store[EitherErrorOr] =
     os.makeDir.all(dir)

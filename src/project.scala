@@ -9,6 +9,7 @@
 ///> using option "-language:strictEquality"
 
 //> using option -Wunused:all
+//> using option -Wconf:msg=nowarn:s
 //> using option -deprecation
 
 // crawler dependencies
@@ -27,6 +28,9 @@
 
 //> using dep io.getkyo::kyo-core:1.0-RC1
 //> using dep io.getkyo::kyo-combinators:1.0-RC1
+
+//> using dep io.github.marcinzh::turbolift-core:0.126.0
+//> using dep io.github.marcinzh::turbolift-bindless:0.126.0
 
 //> using dep ch.epfl.lamp::gears:0.2.0
 //> using dep ch.epfl.lamp::steps:0.2.0

@@ -63,7 +63,10 @@ class PerfSuite extends FunSuite:
     "kyo",
     "kyo-high",
     "gears",
-    "gears-high"
+    "gears-high",
+    "turbolift",
+    "turbolift-high",
+    "turbolift-memo"
   )
 
   val iterations = sys.env.get("ITERATIONS").map(_.toInt).getOrElse(1)

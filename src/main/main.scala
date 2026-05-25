@@ -107,6 +107,27 @@ def run(variant: String, root: String, selector: Option[String]): Unit =
 
       KyoApp.Unsafe.runAndBlock(Duration.Infinity)(scraper.start).getOrThrow
 
+    case "turbolift" =>
+      val fetch = Fetch.turbolift
+      val store = Store.turbolift(outputDir)
+      val scraper = TurboliftScraper(fetch, store, rootUri, selector, maxDepth = 20)
+
+      scraper.start.runIO.get
+
+    case "turbolift-high" =>
+      val fetch = Fetch.turbolift
+      val store = Store.turbolift(outputDir)
+      val scraper = TurboliftHighScraper(fetch, store, rootUri, selector, maxDepth = 20)
+
+      scraper.start.runIO.get
+
+    case "turbolift-memo" =>
+      val fetch = Fetch.turbolift
+      val store = Store.turbolift(outputDir)
+      val scraper = TurboliftMemoScraper(fetch, store, rootUri, selector, maxDepth = 20)
+
+      scraper.start.runIO.get
+
     case "ox" =>
       val fetch = Fetch.either
       val store = Store.either(outputDir)

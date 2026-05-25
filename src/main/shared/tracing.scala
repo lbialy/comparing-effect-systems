@@ -14,6 +14,9 @@ import zio.Clock
 import zio.Scope
 import zio.Task as ZTask
 import zio.ZIO
+import turbolift.!!
+import turbolift.data.Resource as TResource
+import turbolift.effects.IO as TIO
 
 import java.time.Instant
 import java.util.UUID
@@ -57,6 +60,10 @@ trait Tracing[F[_]]:
 trait TracingKyo:
   def span[A, S](name: String)(body: Trace ?=> A < S)(using parent: Trace): A < (Async & S)
   def root[A, S](name: String)(body: Trace ?=> A < S): A < (Async & S)
+
+trait TracingTurbolift:
+  def span[A, U <: TIO](name: String)(body: Trace ?=> A !! U)(using parent: Trace): A !! U
+  def root[A, U <: TIO](name: String)(body: Trace ?=> A !! U): A !! U
 
 object Tracing:
 
@@ -136,6 +143,25 @@ object Tracing:
           res <- body(using rootTrace)
         yield res
 
+  class TurboliftTracing(spans: ConcurrentLinkedQueue[SpanData]) extends TracingTurbolift:
+    private def now: Instant !! TIO = TIO.instant
+    def span[A, U <: TIO](n: String)(body: Trace ?=> A !! U)(using p: Trace): A !! U =
+      val childTrace = Trace(p.uri)
+      for
+        start <- now
+        res <- body(using childTrace).guarantee(
+          now.map(end => spans.add(SpanData(childTrace.id, Some(p.id), n, p.uri.map(_.toString), start, end)))
+        )
+      yield res
+    def root[A, U <: TIO](n: String)(body: Trace ?=> A !! U): A !! U =
+      val rootTrace = Trace(None)
+      for
+        start <- now
+        res <- body(using rootTrace).guarantee(
+          now.map(end => spans.add(SpanData(rootTrace.id, None, n, None, start, end)))
+        )
+      yield res
+
   class SyncTracing(spans: ConcurrentLinkedQueue[SpanData]) extends Tracing[Id]:
     def span[A](n: String)(body: Trace ?=> Id[A])(using p: Trace): Id[A] =
       val childTrace = Trace(p.uri)
@@ -168,6 +194,10 @@ object Tracing:
   def kyo(name: String): TracingKyo < (KyoScope & Sync) =
     val spans = ConcurrentLinkedQueue[SpanData]()
     KyoScope.ensure(Sync.defer(writeSpans(name, spans))).andThen(KyoTracing(spans))
+
+  def turbolift(name: String): TResource[TracingTurbolift, TIO] =
+    val spans = ConcurrentLinkedQueue[SpanData]()
+    TResource(TIO(TurboliftTracing(spans)), _ => TIO.blocking(writeSpans(name, spans)))
 
   def sync(name: String): (Tracing[Id], () => Unit) =
     val spans = ConcurrentLinkedQueue[SpanData]()

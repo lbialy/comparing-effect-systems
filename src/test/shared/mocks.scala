@@ -9,6 +9,8 @@ import steps.result.*
 import sttp.model.Uri
 import zio.Task as ZTask
 import zio.ZIO
+import turbolift.!!
+import turbolift.effects.IO as TIO
 
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -207,6 +209,58 @@ object Scrapers:
           zio.Unsafe.unsafely {
             zio.Runtime.default.unsafe.run(scraper.start).getOrThrow()
           }
+
+    def makeTurboliftScraper: ScraperAdapter =
+      val services = makeTurboliftServices
+      val scraper = TurboliftScraper(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism,
+        queueCapacity = scraperQueueCapacity
+      )
+
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start.runIO.get
+
+    def makeTurboliftHighScraper: ScraperAdapter =
+      val services = makeTurboliftServices
+      val scraper = TurboliftHighScraper(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
+
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start.runIO.get
+
+    def makeTurboliftMemoScraper: ScraperAdapter =
+      val services = makeTurboliftServices
+      val scraper = TurboliftMemoScraper(
+        fetch = services,
+        store = services,
+        root = uri"http://localhost:8080/",
+        selector = None,
+        maxDepth = scrapeMaxDepth,
+        parallelism = scraperParallelism
+      )
+
+      new ScraperAdapter:
+        def maxParallelism: Int = services.maxParallelism
+        def visited: Vector[String] = services.visited
+        def hasDuplicates: Boolean = services.hasDuplicates
+        def run: Unit = scraper.start.runIO.get
 
     def makeOxScraper: ScraperAdapter =
       val services = makeEitherServices
@@ -532,6 +586,35 @@ object Scrapers:
 
         def maxParallelism: Int = maxSeen.get()
 
+    def makeTurboliftServices: Fetch[TTask] & Store[TTask] & MockMetadata =
+      new Fetch[TTask] with Store[TTask] with MockMetadata:
+        val visitedUris = AtomicReference(Vector.empty[String])
+        val maxSeen = AtomicInteger(0)
+        val currentPending = AtomicInteger(0)
+
+        def fetch(uri: Uri): String !! TIO =
+          val path = normalisePath(uri)
+          routes.get(path) match
+            case Some(PageSpec(links, maybeDelay, maybeError)) =>
+              currentPending.incrementAndGet()
+              maxSeen.updateAndGet(max => Math.max(max, currentPending.get()))
+              (for
+                _ <- maybeDelay.fold(!!.unit):
+                  case fd: FiniteDuration => TIO.sleep(fd)
+                  case _                  => TIO.sleep(Int.MaxValue)
+                _ <- TIO(visitedUris.getAndUpdate(_ :+ path))
+                result <- maybeError.fold(TIO(Templating.page(links)))(e => TIO.raise(e))
+              yield result)
+                .guarantee(TIO(currentPending.decrementAndGet()))
+            case None =>
+              TIO.raise(Exception(s"Page not found: $uri"))
+
+        def store(key: String, value: String): Unit !! TIO = !!.unit
+
+        def visited: Vector[String] = visitedUris.get()
+
+        def maxParallelism: Int = maxSeen.get()
+
     Map(
       "future" -> makeFutureScraper,
       "cats" -> makeCatsScraper,
@@ -540,12 +623,15 @@ object Scrapers:
       "ox" -> makeOxScraper,
       "gears" -> makeGearsScraper,
       "cats-tf" -> makeCatsScraperTF,
+      "turbolift" -> makeTurboliftScraper,
+      "turbolift-memo" -> makeTurboliftMemoScraper,
       "future-high-level" -> makeFutureScraperHighLevel,
       "cats-high-level" -> makeCatsScraperHighLevel,
       "zio-high-level" -> makeZioScraperHighLevel,
       "kyo-high-level" -> makeKyoScraperHighLevel,
       "ox-high-level" -> makeOxScraperHighLevel,
       "gears-high-level" -> makeGearsScraperHighLevel,
-      "cats-high-tf" -> makeCatsScraperHighTF
+      "cats-high-tf" -> makeCatsScraperHighTF,
+      "turbolift-high" -> makeTurboliftHighScraper
     )
   end makeScrapers
