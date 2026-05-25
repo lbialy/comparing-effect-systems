@@ -7,6 +7,8 @@ import munit.FunSuite
 import zio.Runtime
 import zio.Unsafe
 import zio.ZIO
+import turbolift.!!
+import turbolift.effects.IO as TIO
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -184,6 +186,42 @@ class TracingTests extends FunSuite {
     verifySpans(spans, "root", Map("root" -> Seq("child1", "child2"), "child2" -> Seq("grandchild1")))
   }
 
+  // Turbolift Tests
+  test("Turbolift: single root span") {
+    Tracing
+      .turbolift("turbolift-single")
+      .use { tracing =>
+        tracing.root("root") {
+          !!.pure("done")
+        }
+      }
+      .runIO
+      .get
+    val spans = readSpans("cats-single")
+    verifySpans(spans, "root", Map.empty)
+  }
+
+  test("Turbolift: nested spans") {
+    Tracing
+      .turbolift("turbolift-nested")
+      .use { tracing =>
+        tracing.root("root") {
+          tracing.span("child1") {
+            !!.unit
+          } &&!
+            tracing.span("child2") {
+              tracing.span("grandchild1") {
+                !!.unit
+              }
+            }
+        }
+      }
+      .runIO
+      .get
+    val spans = readSpans("cats-nested")
+    verifySpans(spans, "root", Map("root" -> Seq("child1", "child2"), "child2" -> Seq("grandchild1")))
+  }
+
   // Sync Tests
   test("Sync: single root span") {
     val (tracing, close) = Tracing.sync("ox-single")
@@ -254,6 +292,22 @@ class TracingTests extends FunSuite {
       )
     }
     val spans = readSpans("zio-concurrent")
+    verifySpans(spans, "root", Map("root" -> Seq("fiber1", "fiber2")))
+  }
+
+  test("Turbolift: concurrent spans") {
+    Tracing
+      .turbolift("turbolift-concurrent")
+      .use { tracing =>
+        tracing.root("root") {
+          val f1 = tracing.span("fiber1") { TIO.sleep(10.millis) }
+          val f2 = tracing.span("fiber2") { TIO.sleep(20.millis) }
+          f1 &! f2
+        }
+      }
+      .runIO
+      .get
+    val spans = readSpans("cats-concurrent")
     verifySpans(spans, "root", Map("root" -> Seq("fiber1", "fiber2")))
   }
 
